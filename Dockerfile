@@ -4,7 +4,7 @@
 # ======================================================================
 
 # ---- Stage 1: 构建前端 SPA ----
-FROM node:20-slim AS frontend-builder
+FROM node:26-slim AS frontend-builder
 
 WORKDIR /app
 
@@ -22,7 +22,7 @@ COPY scripts/ scripts/
 RUN npm run build
 
 # ---- Stage 2: 构建后端生产依赖 ----
-FROM node:20-slim AS backend-deps
+FROM node:26-slim AS backend-deps
 
 WORKDIR /app
 
@@ -45,7 +45,7 @@ RUN cd backend && npm ci --omit=dev --ignore-scripts
 RUN cd backend && npm_config_build_from_source=true npm rebuild better-sqlite3 --omit=dev || (echo "[Docker] better-sqlite3 编译失败，构建中止" >&2 && exit 1)
 
 # ---- Stage 3: 后端运行环境 ----
-FROM node:20-slim
+FROM node:26-slim
 
 LABEL maintainer="武理小精灵团队"
 LABEL description="武理小精灵 - 武理校园 AI 助手 / WUT Campus AI Assistant"
