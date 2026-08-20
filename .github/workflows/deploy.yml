@@ -131,7 +131,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Upload deployment manifests
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
