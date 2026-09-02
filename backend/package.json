@@ -10,27 +10,27 @@
     "test:watch": "node --experimental-vm-modules ../node_modules/vitest/vitest.mjs --config ../vitest.backend.config.js"
   },
   "dependencies": {
-    "@huggingface/transformers": "^3.8.1",
+    "@huggingface/transformers": "^4.2.0",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
     "@opentelemetry/sdk-node": "^0.221.0",
     "@qdrant/js-client-rest": "^1.19.0",
-    "better-sqlite3": "^12.11.1",
+    "better-sqlite3": "^13.0.3",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "express": "^4.22.2",
-    "express-rate-limit": "^8.6.2",
-    "helmet": "^7.0.0",
-    "ioredis": "^5.11.1",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.3.0",
+    "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",
     "jszip": "^3.10.1",
-    "mammoth": "^1.12.0",
+    "mammoth": "^1.12.2",
     "mathjs": "^15.2.0",
-    "morgan": "^1.11.0",
-    "multer": "^2.2.0",
+    "morgan": "^1.12.0",
+    "multer": "^2.3.0",
     "mupdf": "^1.28.0",
-    "pdf-parse": "^1.1.1",
+    "pdf-parse": "^2.4.5",
     "turndown": "^7.2.4",
     "turndown-plugin-gfm": "^1.0.2"
   },
@@ -39,6 +39,6 @@
     "sharp": "0.35.3"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.1.14"
   }
 }
