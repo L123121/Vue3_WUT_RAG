@@ -162,6 +162,10 @@ chat.store（聚合层）→ 页面统一接口
 - `src/api/chat.js` — 流式 API + 连接管理
 - `src/components/chat/ChatBox.vue` — 输入框/语音/文件上传
 - `src/components/chat/MessageList.vue` — 消息列表
+- `src/views/WikiBrowse.vue` / `src/views/WikiEntry.vue` — 校园百科列表与词条阅读页（正文复用 MarkdownRenderer）
+- `src/composables/useWiki.js` — 词条列表模块级缓存（30s TTL + `invalidateWikiEntries()` 显式失效）、服务端搜索防抖、上下架
+- `src/utils/wikiTree.js` — 从实际入库分类反推分类树、词条路径（slug 优先、未上架回退 id）
+- `src/constants/wiki-categories.js` — 两级分类体系唯一定义处（后端对 category 无白名单校验，展示口径以此为准）
 - `src/components/chat/MarkdownRenderer.vue` — Markdown 组件
 - `src/components/chat/VoiceRecorder.vue` — 语音输入
 
@@ -171,13 +175,16 @@ chat.store（聚合层）→ 页面统一接口
 - `vector-store.service.js` — 本地文件持久化 + 精确相似度检索（稠密+稀疏混合，可切换）
 - `embedding.service.js` — BGE-small-zh ONNX + n-gram 稀疏（整数 key）
 - `reranker.service.js` — BGE-reranker-base cross-encoder
-- `rag.service.js` — 检索/自适应截断/二级排序/上下文组装
+- `rag.service.js` — RAG 门面：公开 API（chat/chatStream/localSearchChat/retrieve*）+ 管道与生成层编排 + 兼容 shim
+- `rag-pipeline.service.js` — RAG 检索管道编排：文档检查 → 多变体检索 → 可靠性判定 → 父段处理（聚合/rerank/截断/MMR/排序/组装）
+- `rag-generation.service.js` — RAG 生成层：非流式/流式 LLM 生成、失败守卫与纯 LLM 降级、grounding/process 卡片/usage/追问收尾
 - `ai.service.js` — LLM 调用 + 请求队列（LLM_CONCURRENCY=3）
 - `ocr.service.js` — 视觉识别（step-1o-turbo-vision）：图片/扫描件 → Markdown，mupdf 渲染 + 页级并发，支持按页 OCR（opts.pages/returnMap，文本型 PDF 表格页重建用）
 - `judge.service.js` — LLM-as-judge 独立 Key，4 指标合并 1 次请求
 - `prometheus-metrics.service.js` — Prometheus 文本格式渲染（零依赖）：运营计数器 + 有界原始延迟样本现场分桶直方图 + 进程/事件循环自观测，`/api/metrics/prometheus` env 门控 + token 校验，抓取方放外部
 - `otel-tracing.service.js` — OTLP trace 导出（env 门控，`OTEL_EXPORTER_OTLP_ENDPOINT` 设置即启用）：手动埋点三处——middleware HTTP 根 span（http.* 语义属性）、`RagTracer.recordStage` 单点接线全部 RAG 阶段子 span（显式时间戳）、ai.service 非流式/流式 LLM span（gen_ai.* 属性）；关闭时 `@opentelemetry/api` 走 Noop，零依赖加载
 - `intent-router.service.js` — 意图路由（V2.0）：fastRoute 零成本关键词 + LLM 分类兜底（默认关）+ 兜底 rag
+- `wiki.service.js` — 校园百科治理层：以知识库 `document:<docId>` 为唯一正文源，服务端解析 front-matter 与模拟语料判定（禁止上架）、上下架元数据与 slug 别名存 `wiki:entries`/`wiki:slugs` 两个 hash（不新建表、不碰 `document.service` 参与 contentHash 去重的写入路径）
 - `agent.service.js` — Agent 工具调度（V2.0）：L2 有界多轮（maxToolRounds=2 + 无进展检测）+ L3 会话记忆摘要 + L4 agent tracer
 - `agent-tools.js` — Agent 工具注册表：search_knowledge_base（复用 RAG）+ calculate（mathjs 安全求值）
 - `conversation-orchestrator.service.js` — Chat/RAG/Agent 统一编排、持久记忆注入、失败降级与结果保存
@@ -398,6 +405,37 @@ chat.store（聚合层）→ 页面统一接口
 - ⑫ 兜底会话丢失：`sendMessage` 无会话时创建的 conv 未用 `local_` 前缀 → 被当服务端会话反复 PUT 失败 + loadConversations 合并时被丢弃。改 `createLocalConversation()`
 - ⑬ 性能：markdown worker 崩溃后复位单例（此前恒为"存在但已死"，每次大渲染白等 5s；加 30s 重建退避）；MarkdownIt 实例收敛模块级（`markdownRendererCore.js`，每气泡一份 → 全局一份）+ useCodeHighlighter 状态模块级共享；MessageList 上一条用户消息预计算 O(N²)→O(N)；流式期间跳过当前会话的后端全量 PUT（此前每个 500ms token 停顿都 PUT 整会话半截内容，收尾 immediate 补权威同步）；localStorage 兜底不变
 - 测试：useCodeHighlighter 两条"starts at"断言按模块级共享契约改写（跨实例同引用）；后端全量 427 用例、前端 114 用例通过
+
+**24. 全链路审查第二轮：agent trace 透传断裂 / 流式降级重发重复 / 空结果缓存污染（2026-09-06）**
+- 背景：第 23 轮改动自查通过后，用前端流式链路 + 后端编排链路两个独立审查再做一轮，共修复 12 处（含多个"功能上线但数据从未到达"的静默断裂）
+- 前端：
+  - ① agent/agenticRag SSE trace 事件被丢弃：chat.js 转发 gate 只认 `rag/trace/retrieval`，而 chat.controller 对 agent 链路发的是专用形状 `{agent:{rounds,toolCalls,finishReason,…}}`/`{agenticRag:{…}}` → 流式下 AgentToolPanel 的轮次/工具/耗时永远为空（非流式路径正常所以测试未发现）。补转发 + useStreaming.onTrace 识别 `payload.agent/payload.agenticRag`（MessageBubble 以 finishReason 字段区分 agent trace 与 RAG trace，二者共用 ragTrace 存储位）
+  - ② 确定性 4xx 不再重试：此前 400/401/413 也走满 3 次指数退避（~7s+），且每次 setConnected(false) 让"连接已断开"横幅误显示最长 30s。4xx 错误携带 status，除 408/429 外直接收敛 onError，且不置断连态（收到过 HTTP 响应 = 服务可达）
+  - ③ 重试退避等待改为 abort 感知：退避期间点"停止"立即生效（此前 await delay 不感知 signal，最长白等 5s）
+  - ④ retryMessage / editAndResend 补传原消息附件（此前文件消息重试会丢附件，等于换了个问题重问）；[DONE]/error 路径主动 reader.cancel() 释放响应体，不等服务端关连接
+  - ⑤ onRetry 清空 decisionDraft：重试从头重流决策内容，不清空会拼接成两份"思考草稿"
+  - ⑥ 代码语言动态导入失败负缓存（failedLanguages）：```mermaid 等不可注册语言此前在流式期间每个 chunk（150ms 节流）都重试一次 import 且永不自愈；同时仅导入成功才 bump highlightVersion，避免无效重渲染循环
+  - ⑦ MarkdownRenderer 初始渲染改走 updateRender：大内容（>2000 字符）享受 worker 路径，此前 setup 无条件主线程同步渲染；async 渲染加 renderSeq 序号丢弃过期结果（worker 超时转主线程慢路径时旧结果落地 → 内容回退 + isContentStale 恒真光标闪烁不消）
+  - ⑧ 空消息守卫前移到会话创建之前：空提交不再凭空生成"本地会话"
+- 后端：
+  - ⑨ ai.service 流式中途失败不再切备用 provider：主 provider 已输出部分内容后失败，备用重发整段 = "半截回答 + 完整回答"拼接重复。改为仅"连接建立前失败"才切备用（streamed 标记），中途失败如实上抛
+  - ⑩ rag.service chatStream 同类修复：RAG 生成中途失败且 fullReply 非空时不降级纯 LLM 重发，保留已有内容礼貌收尾（fallbackReason=rag_pipeline_error）；无内容时保留原降级路径。agentic-rag.service 本就有此守卫，此处补齐
+  - ⑪ 检索精确缓存不写空结果：向量库瞬时故障被 catch 吞掉后 candidates=[]，此前照写缓存 → TTL 内同一查询全部命中空缓存、即便故障恢复也答"无可靠来源"（语义缓存本有 length>0 闸门，精确缓存此前漏了）
+  - ⑫ usage 下发补全：agent 收尾与纯 chat 路由（orchestrator）此前丢弃 chunk.usage，token 用量从未到达前端；agent.decide 超时改走 config.agent.decideTimeoutMs（此前硬编码 15s 与 AGENT_DECIDE_TIMEOUT_MS 旋钮脱节）；agent-traces.jsonl 加 10MB 轮转（rename .1）
+- 未修（记录）：非流式 chat/rag 端点未向 getCompletion 传 signal（客户端断开后 LLM 调用跑完，占 LLM_CONCURRENCY=3 槽位；需 ai.service.getCompletion 先支持 signal 才能收敛）；两 controller 的 sources/content/error 事件 traceId 有无仍不一致，前端已兼容属潜在脆弱点
+- 测试：前端 114、后端 427 用例通过
+
+**25. rag.service 拆分收尾 + backend 日志统一收敛 logEvent（2026-09-06）**
+- 背景：rag.service.js 经多轮拆分后仍剩 961 行，剩余内容为管道编排 + 生成层 + 兼容 shim；backend 日志 console.* 散布约 35 文件 190 处，无法结构化检索/统一采样
+- 拆分（沿用既有惯用法："函数第一参数为 RagService 实例（svc），内部仍通过 svc 派发，保证测试 mock 与运行时覆盖行为不变"）：
+  - `rag-pipeline.service.js`（204 行）：`runRAGPipeline`（文档检查 → dualRetrieve → 可靠性判定 → 子句选择）+ `buildParentContext`（父段聚合 → 父级 rerank → 自适应截断 → MMR 去重 → (docId, parentIdx) 二级排序 → 上下文组装）
+  - `rag-generation.service.js`（221 行）：`buildPrompt`（流程类判别 + prompt 组装）、`generateAnswer`（非流式生成 + grounding 旁路校验）、`streamAnswer`（流式生成 → 中途失败守卫（已输出内容礼貌收尾，防"半截+完整"拼接）→ 纯 LLM 降级重流；经 `yield*` 委托，SSE 事件契约不变）
+  - rag.service.js 瘦身为编排门面（961 → 630 行）：构造器/tracer 辅助/chat() drain/chatStream 事件编排/localSearchChat 结果组装/兼容 shim 保留原位——公开方法面（含 `_runRAGPipeline`、`_buildContextFromParents` 等私有方法）零变化
+- console 收敛：backend/src 的 console.* 全部清零（grep 复查 0 残留），统一走 observability `logEvent` 结构化 JSON 行；事件名域前缀 + snake_case（如 `embedding_local_model_load_failed`、`vector_store_connect_failed`、`quality_audit_record_failed{scope}`、`server_started`）；人类可读文案原样保留在 payload 的 message/error 字段
+  - 豁免：`backend/scripts/`（CLI 评测/导入脚本，console 即产品输出）、前端、observability 自身；此前"已迁移"的 5 文件（middleware/orchestrator/intent-router/rag-tracer/rag-retrieval）补齐遗漏的 5 处；app.js 启动横幅 8 行合并为单条 `server_started` 事件
+  - ⚠️ 运维口径变化：第 22 轮教训里的巡检命令 grep "[Embedding] 本地模型加载失败" 改为 `grep embedding_local_model_load_failed`（或对 JSON 行 grep 中文文案，文案未变）
+- 落地方式：先派子代理执行收敛（本轮第四次因 "model concurrency limit exceeded" 失败），改由主会话自做——codemod 脚本（精确原文替换 + require 自动插入 + CRLF 兼容）批量迁移，残留人工收尾；⚠️ 排坑：require 自动插入的锚点扫描会命中**函数内懒加载 require**（file-upload/embedding/reranker 等 8 文件中招，logEvent 被插进函数作用域导致其余调用点 no-undef），已全部收敛到模块顶层
+- 测试：backend 全量 503 用例、integration 子集（forks 隔离）通过；`lint:check` 清零；前端未触碰（114 用例不受影响）
 
 ### ❌ 尝试但退回
 

@@ -33,6 +33,16 @@ function sourceTooltip(sources, index) {
 }
 
 /**
+ * 跳转原文所需的定位信息：文档 ID + 用于高亮的关键词
+ * 关键词取 snippet 首个有意义词组（2-12 个中日韩/字母数字字符），与知识库预览的高亮口径一致
+ */
+export function citationTarget(source) {
+  const docId = source?.id || source?.docId || source?.parentId || '';
+  const match = String(source?.snippet || '').match(/[\u4e00-\u9fa5A-Za-z0-9]{2,12}/);
+  return { docId, q: match ? match[0] : '' };
+}
+
+/**
  * 把 HTML 中的引用标记替换为徽章
  * @param {string} html - 已 sanitize 的 HTML
  * @param {Array} sources - 来源列表（title/category/snippet）

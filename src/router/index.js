@@ -25,6 +25,18 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/wiki',
+    name: 'Wiki',
+    component: () => import('../views/WikiBrowse.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/wiki/:idOrSlug',
+    name: 'WikiEntry',
+    component: () => import('../views/WikiEntry.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/eval',
     name: 'Eval',
     component: () => import('../views/EvalScoring.vue'),

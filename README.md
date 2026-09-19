@@ -6,6 +6,8 @@
 
 > 当前仓库不包含成绩、课表、考试安排等教务系统查询工具；账号体系为项目自有注册与登录。
 
+> **知识库语料说明**：`ragdata/` 中有 14 份文档自带 `source: 模拟数据（演示用）` 标注，属于为演示检索链路而编写的虚构内容（不来自武汉理工大学官方渠道）。下文所有检索/生成指标都是在这套固定语料上测得的**技术链路表现**，不代表内容的真实性，也不应被当作校园信息参考。
+
 ## 核心能力
 
 ### 用户功能
@@ -13,6 +15,7 @@
 - **流式 AI 对话**：基于 Fetch、ReadableStream 和 SSE 增量渲染回答；生产实测 SSE 首包（retrieval 事件）约 130ms。
 - **自动意图路由**：后端自动决定进入 `chat`、`rag` 或 `agent`，前端无需手动切换 RAG。
 - **RAG 知识库**：支持文档上传、批量录入、两级分类、统计、重索引、来源引用和反馈。
+- **校园百科**：知识库文档的上架阅读视图（`/wiki`），默认不上架、管理员逐条放开，演示用虚构语料按治理规则禁止上架；分类树、目录锚点、标题与正文搜索、可读 slug 链接，并与对话来源引用双向跳转。
 - **Agent 工具调用**：内置知识库检索 `search_knowledge_base` 与数学计算 `calculate`。
 - **文件对话与 OCR**：支持图片、PDF、DOCX、PPTX、TXT、Markdown；扫描件和图片可走视觉 OCR。
 - **会话管理**：创建、切换、重命名、删除、重试、编辑重发、任意消息分叉新会话、收藏和后端持久化。
@@ -42,8 +45,9 @@ flowchart TD
     MSG["用户消息"] --> ORCH["ConversationOrchestrator"]
     ORCH --> ROUTER["IntentRouter"]
     ROUTER -- "问候/闲聊" --> CHAT["chat（普通对话）"]
-    ROUTER -- "校园/知识型问题（默认兜底）" --> RAG["rag（知识库检索）"]
+    ROUTER -- "命中校园/课程/文档检索规则" --> RAG["rag（知识库检索）"]
     ROUTER -- "数学计算/复合任务" --> AGENT["agent（工具调用）"]
+    ROUTER -- "未命中任何高置信规则（兜底）" --> CHAT
     AGENT --> CALC["calculate"]
     AGENT --> SEARCH["search_knowledge_base"]
     CHAT --> SSE["SSE 流式返回 content / sources / trace"]
@@ -54,7 +58,7 @@ flowchart TD
 路由原则：
 
 1. 高置信规则优先，避免每条消息额外调用一次 LLM。
-2. 无法明确分类时默认进入 RAG，RAG 无可靠来源时再降级为普通模型回答。
+2. 只有明确命中校园/课程资料/文档检索规则时才进入 RAG；**未命中规则时默认走普通对话（chat）**，避免所有问题都触发知识库检索。RAG 无可靠来源时降级为普通模型回答。
 3. Agent 决策或工具执行失败时自动降级至 RAG。
 4. `INTENT_CLASSIFY_ENABLED=true` 可开启 LLM 意图分类；默认关闭以降低首包延迟。
 5. `AGENT_TOOL_ENABLED=false` 可关闭工具调度并回退 RAG 链路。
@@ -98,13 +102,31 @@ flowchart TD
 
 ### 评测结果
 
-检索与生成质量由 `scripts/rag-eval/` 的评测体系持续度量（数据集与评测脚本在仓库内，结果文件由 `RESULTS_DIR` 本地生成、不入库；检索基线已在部署流水线中门控执行）：
+检索与生成质量由 `scripts/rag-eval/` 的评测体系持续度量（数据集与评测脚本在仓库内，结果文件由 `RESULTS_DIR` 本地生成、不入库；检索基线在部署流水线中按需门控，需显式配置仓库变量 `RAG_EVAL_ENABLED=true` 才会执行）：
+
+> 口径说明：以下指标在**含模拟数据**的知识库上测得，衡量的是检索与生成链路本身的效果，不能等同于真实校园问答的准确率。数据集中的 `relevant_doc_ids` 指向具体入库批次产生的文档 ID，在他人环境重新入库后该映射会失效——复现前请先重建映射（见「评测复现性」）。
 
 - **检索质量**（官方评测，full-coverage 32 题，加权融合 + MMR）：Recall **97.4%**、MRR **0.977**、nDCG@5 **0.970**、HitRate **100%**。
 - **融合策略消融**：RRF(k=10) 与加权融合打平（Recall 同为 97.4%，MRR/nDCG@5 微弱领先 0.007/0.004，属噪声级差异）；RRF(k=60) 因排名差异被过度压扁明显劣化（Recall 74.5%），最终默认保留加权融合。
 - **MMR 消融**：修复前默认 MMR 使 Recall 降至 80.7%（相关父段被多样性排序挤出截断窗口），修复后 MMR 与关闭 MMR 均达 97.4%。
 - **生成质量**（RAGAS，campus-qa 32 题，judge 模型 step-3.7-flash）：Faithfulness **91.7%**、Context Recall **81.5%**。
 - **零成本防线**：grounding 句级 bigram 覆盖率校验、正则 query 分解、入库 prompt-injection 清洗均不消耗模型调用。
+
+### 评测复现性
+
+指标要能被别人跑出来，前提是**跑在同一个语料上**。为此仓库里固定了一份评测语料清单，作为数据集 `relevant_doc_ids` 的唯一事实来源：
+
+| 文件 / 命令 | 作用 |
+| --- | --- |
+| `scripts/rag-eval/corpus-manifest.json` | 评测语料清单（标题 + 类别 + 派生 ID）。清单之外的文档都算语料外 |
+| `npm run eval:corpus-check` | 校验「清单 ↔ 知识库 ↔ 数据集」三方对齐；有偏差即退出码 1 |
+| `npm run eval:corpus-migrate` | 把数据集里的历史 docId 迁移到确定性 ID |
+
+docId 由 `backend/src/utils/doc-id.js` 从 **(标题, 类别)** 确定性派生（`doc_<sha256(title\0category)[0:32]>`），所以同一份资料重新入库会得到同一个 ID，不再是一次一个随机 UUID。这也意味着同一 (标题, 类别) 的不同内容属于"覆盖"语义——重新入库会替换旧文档。
+
+复现步骤：把 `corpus-manifest.json` 里的文档按清单标题/类别入库 → `npm run eval:corpus-check` 通过 → 再跑评测。
+
+> 已知偏差：`full-coverage-deploy-qa.json` 有 5 处引用了当前知识库中不存在的 `doc_daff1331-…`，`eval:corpus-check` 会报出来。这些条目的地面真值需要修正，否则会恒定判为未召回、系统性拉低该数据集的分数。
 
 ## 页面路由
 
@@ -113,6 +135,8 @@ flowchart TD
 | 登录与注册 | `/login` | 公开 | 自有账号注册、登录 |
 | AI 对话 | `/chat` | 登录 | SSE 对话、文件、语音、会话与工具轨迹 |
 | 知识库 | `/knowledge` | 登录 | 已登录用户查看；管理员上传、删除和重索引 |
+| 校园百科 | `/wiki` | 登录 | 已上架词条的列表、分类树与标题/正文搜索；管理员可含未上架并上下架 |
+| 百科词条 | `/wiki/:idOrSlug` | 登录 | 词条正文阅读页（目录锚点、上下篇、相关词条），支持文档 ID 或 slug |
 | 评测 | `/eval` | 登录 | 人工评分、Judge 结果与系统指标 |
 | 反馈看板 | `/feedback` | 管理员 | RAG 反馈分页和筛选 |
 | 分享快照 | `/share/:code` | 公开只读 | 查看已生成的对话快照 |
@@ -131,6 +155,9 @@ flowchart TD
 | `GET` | `/api/rag/documents` | 查看知识库文档 |
 | `POST` | `/api/rag/documents/upload` | 管理员上传知识库文档 |
 | `POST` | `/api/rag/documents/reindex` | 管理员重建索引；`mode=incremental` 走内容 hash 增量 diff，未变段落复用向量 |
+| `GET` | `/api/wiki/entries` | 百科词条列表（默认仅已上架；`q` 匹配标题/分类/正文，`includeHidden` 仅管理员） |
+| `GET` | `/api/wiki/entries/:idOrSlug` | 百科词条正文，服务端已完成 front-matter 解析与来源标注 |
+| `PUT` | `/api/wiki/entries/:docId/visibility` | 管理员上下架；演示用模拟语料默认返回 409 拒绝上架 |
 | `POST` | `/api/share` | 创建分享快照 |
 | `GET` | `/api/share/:code` | 公开读取分享快照 |
 | `GET` | `/api/memory` | 用户记忆接口 |
@@ -255,6 +282,9 @@ RAG 与 Agent 评测脚本位于 `scripts/rag-eval/`，主要数据集位于 `sc
 | `EMBEDDING_MODEL` | `Xenova/bge-small-zh-v1.5` | Embedding 模型标识 |
 | `EMBEDDING_CACHE_DIR` | `.model-cache` | 本地模型缓存目录 |
 | `EMBEDDING_LOCAL_FILES_ONLY` | `true` | 是否禁止运行时下载模型 |
+| `EMBEDDING_BATCH_SIZE` | `16` | 单次 ONNX 前向的批大小；索引时按此分组批量推理 |
+| `EMBEDDING_QUERY_INSTRUCTION` | `true` | 查询侧加 BGE 指令前缀（s2p 非对称检索）；置 `false` 可与文档侧同路径做 A/B |
+| `EMBEDDING_SPARSE_IDF` | `true` | 稀疏通道用 BM25（idf + 长度归一化）。切换后文档侧权重变化，需全量重索引 |
 | `RAG_HYBRID_SEARCH` | `true` | 启用 dense + sparse 混合检索 |
 | `RAG_VECTOR_TOP_K` | `50` | 初始候选数 |
 | `RAG_RERANK_TOP_K` | `10` | 重排后最大候选数 |

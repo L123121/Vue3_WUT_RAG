@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyCitationBadges } from '../utils/citations.js';
+import { applyCitationBadges, citationTarget } from '../utils/citations.js';
 
 const sources = [
   { title: '校园指南', snippet: '图书馆开放时间为早上 8 点' },
@@ -45,5 +45,24 @@ describe('applyCitationBadges', () => {
     expect(applyCitationBadges('<p>无引用文本</p>', sources)).toBe('<p>无引用文本</p>');
     const out = applyCitationBadges('<p>事实 [3]</p>', sources);
     expect(out).toContain('title="点击查看来源"');
+  });
+});
+
+describe('citationTarget', () => {
+  it('优先取文档级 id，并给出 snippet 首个词组作为定位关键词', () => {
+    expect(citationTarget({ id: 'doc_1', snippet: '图书馆开放时间为早上 8 点' }))
+      .toEqual({ docId: 'doc_1', q: '图书馆开放时间为早上' });
+  });
+
+  it('缺 id 时退化到 docId / parentId', () => {
+    expect(citationTarget({ docId: 'doc_2' }).docId).toBe('doc_2');
+    expect(citationTarget({ parentId: 'doc_3_para_1' }).docId).toBe('doc_3_para_1');
+    expect(citationTarget({}).docId).toBe('');
+    expect(citationTarget(undefined)).toEqual({ docId: '', q: '' });
+  });
+
+  it('无 snippet 或全标点时不带关键词', () => {
+    expect(citationTarget({ id: 'doc_4', snippet: '—— ' })).toEqual({ docId: 'doc_4', q: '' });
+    expect(citationTarget({ id: 'doc_5' })).toEqual({ docId: 'doc_5', q: '' });
   });
 });

@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import wutLogoImg from '../../assets/wuhan-university-logo.png';
 import ConversationList from '../chat/ConversationList.vue';
-import { Activity, Database, MessageSquare, BarChart3, LogOut, MessagesSquare, ChevronUp, Moon, Sun } from 'lucide-vue-next';
+import { Activity, BookOpen, Database, MessageSquare, BarChart3, LogOut, MessagesSquare, ChevronUp, Moon, Sun } from 'lucide-vue-next';
 import { useAuthStore } from '../../stores/auth.store.js';
 import { useConversationStore } from '../../stores/conversation.store.js';
 import { useToastStore } from '../../stores/toast.store.js';
@@ -98,6 +98,19 @@ watch(showProfilePanel, (val) => {
         >
           <Database :size="14" />
           <span>知识库</span>
+        </button>
+        <button
+          @click="router.push('/wiki')"
+          @mouseenter="prefetchRoute('/wiki')"
+          :class="[
+            'flex-1 h-8 rounded-md text-xs font-medium inline-flex items-center justify-center gap-1.5 transition-colors',
+            currentPath === '/wiki' || currentPath.startsWith('/wiki/')
+              ? 'bg-white dark:bg-gray-700 text-slate-800 dark:text-white shadow-sm'
+              : 'text-slate-500 dark:text-gray-400 hover:text-slate-700 dark:hover:text-gray-200'
+          ]"
+        >
+          <BookOpen :size="14" />
+          <span>百科</span>
         </button>
         <button
           v-if="showDevEval"

@@ -1,10 +1,11 @@
 <script setup>
 import { useRouter } from 'vue-router';
-import { X, BookOpen } from 'lucide-vue-next';
+import { X, BookOpen, Database } from 'lucide-vue-next';
 import MarkdownRenderer from './MarkdownRenderer.vue';
+import { citationTarget } from '../../utils/citations.js';
 
 /**
- * 行内引用弹窗：展示被引用来源的标题/分类/原文片段，并可跳转知识库定位原文。
+ * 行内引用弹窗：展示被引用来源的标题/分类/原文片段，并可跳转知识库或百科阅读页定位原文。
  * popup = { source: {...}, index: number } | null，由 MessageBubble 持有状态。
  */
 
@@ -15,18 +16,22 @@ const props = defineProps({
 const emit = defineEmits(['close']);
 const router = useRouter();
 
-// 跳转到知识库查看原文（复用 KnowledgeBase 的 docId 自动预览 + q 高亮）
+const target = () => citationTarget(props.popup?.source);
+
+// 知识库：管理视角，带关键词高亮定位
 const openSourceInKnowledgeBase = () => {
-  const source = props.popup?.source;
-  if (!source) return;
-  const docId = source.id || source.docId || source.parentId;
+  const { docId, q } = target();
   if (!docId) return;
-  // 用 snippet 中的首个有意义的词作为高亮关键词，提升定位精度
-  const snippet = source.snippet || '';
-  const match = snippet.match(/[\u4e00-\u9fa5A-Za-z0-9]{2,12}/);
-  const q = match ? match[0] : '';
   emit('close');
   router.push({ path: '/knowledge', query: { docId, ...(q ? { q } : {}) } });
+};
+
+// 百科：阅读视角，同一篇文档的完整词条，高亮口径与知识库一致
+const openSourceInWiki = () => {
+  const { docId, q } = target();
+  if (!docId) return;
+  emit('close');
+  router.push({ path: `/wiki/${docId}`, query: q ? { q } : {} });
 };
 </script>
 
@@ -53,13 +58,20 @@ const openSourceInKnowledgeBase = () => {
           <div class="p-5 overflow-y-auto flex-1">
             <MarkdownRenderer :content="popup.source.snippet || '（无原文内容）'" :sources="[]" />
           </div>
-          <!-- Footer: 跳转知识库查看原文 -->
-          <div class="px-5 py-3 border-t border-slate-100 dark:border-gray-800 shrink-0">
+          <!-- Footer: 跳转原文（百科阅读 / 知识库管理） -->
+          <div class="px-5 py-3 border-t border-slate-100 dark:border-gray-800 shrink-0 flex gap-2">
             <button
-              @click="openSourceInKnowledgeBase"
-              class="w-full h-9 rounded-lg text-xs font-medium inline-flex items-center justify-center gap-1.5 bg-wut-600 text-white hover:bg-wut-700 transition-colors"
+              @click="openSourceInWiki"
+              class="flex-1 h-9 rounded-lg text-xs font-medium inline-flex items-center justify-center gap-1.5 bg-wut-600 text-white hover:bg-wut-700 transition-colors"
             >
               <BookOpen :size="13" />
+              在百科中阅读
+            </button>
+            <button
+              @click="openSourceInKnowledgeBase"
+              class="flex-1 h-9 rounded-lg text-xs font-medium inline-flex items-center justify-center gap-1.5 border border-slate-200 dark:border-gray-700 text-slate-600 dark:text-gray-300 hover:bg-slate-100 dark:hover:bg-gray-800 transition-colors"
+            >
+              <Database :size="13" />
               在知识库查看原文
             </button>
           </div>
