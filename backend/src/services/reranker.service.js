@@ -1,5 +1,7 @@
 "use strict";
 
+const { logEvent } = require('./observability.service');
+
 /**
  * Cross-encoder reranker using BGE-reranker-base (INT8, ~278MB)
  *
@@ -54,7 +56,7 @@ class RerankerService {
 
     const { AutoTokenizer, AutoModelForSequenceClassification } = require('@huggingface/transformers');
 
-    console.log('[Reranker] 加载模型中:', MODEL_NAME);
+    logEvent('info', 'reranker_model_loading', { model: MODEL_NAME });
 
     const tokenizer = await AutoTokenizer.from_pretrained(MODEL_NAME, {
       cache_dir: MODEL_CACHE_DIR,
@@ -67,7 +69,7 @@ class RerankerService {
       local_files_only: true,
     });
 
-    console.log('[Reranker] 加载完成');
+    logEvent('info', 'reranker_model_loaded', {});
     return { tokenizer, model };
   }
 
@@ -122,7 +124,7 @@ class RerankerService {
     try {
       model = await this._loadModel();
     } catch (err) {
-      console.warn('[Reranker] 模型加载失败，退回原始排序:', err.message);
+      logEvent('warn', 'reranker_model_load_failed_fallback', { error: err.message });
       return this._fallbackRank(candidates, topK);
     }
 
@@ -168,7 +170,7 @@ class RerankerService {
       allResults.sort((a, b) => (b._rerankScore || 0) - (a._rerankScore || 0));
       return allResults.slice(0, topK);
     } catch (err) {
-      console.warn('[Reranker] 推理失败，退回原始排序:', err.message);
+      logEvent('warn', 'reranker_infer_failed_fallback', { error: err.message });
       return this._fallbackRank(candidates, topK);
     }
   }

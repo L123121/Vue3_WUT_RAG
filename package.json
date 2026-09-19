@@ -22,6 +22,8 @@
     "test:backend": "node scripts/run-test-suites.mjs backend",
     "test:integration": "node scripts/run-test-suites.mjs integration",
     "eval:rag-baseline": "node backend/scripts/rag-eval/eval-baseline.mjs",
+    "eval:corpus-check": "node scripts/rag-eval/verify-corpus.mjs",
+    "eval:corpus-migrate": "node scripts/rag-eval/migrate-dataset-docids.cjs --write",
     "test:watch": "vitest --pool=threads --maxWorkers=1",
     "postinstall": "cd backend && npm install",
     "eval:ragas": "cd scripts/rag-eval && npm run eval:ragas",

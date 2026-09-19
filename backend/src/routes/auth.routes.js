@@ -5,6 +5,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const authService = require('../services/auth.service');
 const { COOKIE_NAME, requireAuth, generateToken } = require('../middleware/auth.middleware');
+const { logEvent } = require('../services/observability.service');
 
 const router = express.Router();
 
@@ -52,7 +53,7 @@ router.post('/register', registerLimiter, async (req, res) => {
     setAuthCookie(req, res, token);
     res.status(201).json({ success: true, message: '注册成功', data: { user } });
   } catch (error) {
-    console.error('[AuthRegister] error:', error.message);
+    logEvent('error', 'auth_register_failed', { error: error.message });
     sendAuthError(res, error, '注册失败');
   }
 });
@@ -65,7 +66,7 @@ router.post('/login', loginLimiter, async (req, res) => {
     setAuthCookie(req, res, token);
     res.json({ success: true, message: '登录成功', data: { user } });
   } catch (error) {
-    console.error('[AuthLogin] error:', error.message);
+    logEvent('error', 'auth_login_failed', { error: error.message });
     sendAuthError(res, error, '登录失败');
   }
 });
@@ -77,7 +78,7 @@ router.post('/change-password', requireAuth, async (req, res) => {
     const user = await authService.changePassword(req.userId, currentPassword, newPassword);
     res.json({ success: true, message: '密码修改成功', data: { user } });
   } catch (error) {
-    console.error('[ChangePassword] error:', error.message);
+    logEvent('error', 'auth_password_change_failed', { error: error.message });
     sendAuthError(res, error, '密码修改失败');
   }
 });
@@ -94,7 +95,7 @@ router.get('/me', async (req, res) => {
     }
     res.json({ success: true, data: { user } });
   } catch (error) {
-    console.error('[AuthMe] error:', error.message);
+    logEvent('error', 'auth_me_failed', { error: error.message });
     sendAuthError(res, error, '获取用户信息失败');
   }
 });

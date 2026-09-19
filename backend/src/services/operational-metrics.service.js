@@ -1,6 +1,7 @@
 'use strict';
 
 const { createDefaultOperationalMetricsPersistence } = require('./operational-metrics-persistence.service');
+const { logEvent } = require('./observability.service');
 
 const MAX_SAMPLES = 2000;
 const DEFAULT_TIME_ZONE = 'Asia/Shanghai';
@@ -38,7 +39,7 @@ const normalizeTimeZone = (value) => {
     new Intl.DateTimeFormat('en-US', { timeZone }).format(0);
     return timeZone;
   } catch (error) {
-    console.warn(`[OpsMetrics] 无效时区 ${timeZone}，回退到 ${DEFAULT_TIME_ZONE}:`, error.message);
+    logEvent('warn', 'op_metrics_invalid_timezone_fallback', { timeZone, fallback: DEFAULT_TIME_ZONE, error: error.message });
     return DEFAULT_TIME_ZONE;
   }
 };
@@ -74,7 +75,7 @@ const createOperationalMetrics = (options = {}) => {
     try {
       restoredState = persistence.load();
     } catch (error) {
-      console.warn('[OpsMetrics] 持久化状态读取失败，将从零开始:', error.message);
+      logEvent('warn', 'op_metrics_state_read_failed_reset', { error: error.message });
     }
   }
   const totals = Object.fromEntries(Object.entries(TOTAL_DEFAULTS).map(([key, fallback]) => {
@@ -101,7 +102,7 @@ const createOperationalMetrics = (options = {}) => {
       persistence.save(persistedSnapshot());
       persistDirty = false;
     } catch (error) {
-      console.warn('[OpsMetrics] 持久化写入失败，将保留内存统计:', error.message);
+      logEvent('warn', 'op_metrics_state_write_failed_memory_kept', { error: error.message });
     }
   };
 
@@ -135,7 +136,7 @@ const createOperationalMetrics = (options = {}) => {
     const timestamp = now();
     if (timestamp - (alertState.get(key) || 0) < 60_000) return;
     alertState.set(key, timestamp);
-    console.warn(`[OpsAlert] ${message}`, details);
+    logEvent('warn', 'ops_alert', { message, ...details });
   };
 
   const checkAlerts = () => {
@@ -163,7 +164,7 @@ const createOperationalMetrics = (options = {}) => {
       schedulePersist();
     },
     recordError(error, context = {}) {
-      console.error('[OpsError]', { message: error?.message, stack: error?.stack, ...context });
+      logEvent('error', 'ops_error', { message: error?.message, stack: error?.stack, ...context });
     },
     recordLlmUsage({ model, usage, traceId, latencyMs = 0 }) {
       if (!usage) return;

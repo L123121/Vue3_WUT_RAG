@@ -14,6 +14,7 @@
 const config = require('../config');
 const { request } = require('../utils/httpClient');
 const { operationalMetrics } = require('./operational-metrics.service');
+const { logEvent } = require('./observability.service');
 
 class JudgeService {
   constructor() {
@@ -109,7 +110,7 @@ ${answer}`;
           throw new Error('无法解析 judge 输出: ' + content.substring(0, 100));
         }
       }
-      console.log(`[Judge] ${latency}ms faithfulness=${metrics.faithfulness} relevancy=${metrics.answer_relevancy}`);
+      logEvent('info', 'judge_evaluated', { latencyMs: latency, faithfulness: metrics.faithfulness, relevancy: metrics.answer_relevancy });
 
       return {
         ...metrics,
@@ -118,7 +119,7 @@ ${answer}`;
         usage,
       };
     } catch (err) {
-      console.warn(`[Judge] API 失败: ${err.message}，降级为关键词匹配`);
+      logEvent('warn', 'judge_api_failed_keyword_fallback', { error: err.message });
       return {
         ...this._fallbackEvaluation(answer, ground_truth),
         latency: 0,
@@ -170,12 +171,12 @@ ${answer}`;
       const content = res.data?.choices?.[0]?.message?.content || '';
       const summary = String(content || '').trim().slice(0, 300);
       if (summary) {
-        console.log(`[Judge] summarize ${messages.length} 条消息 → ${summary.length} 字符 (${latency}ms)`);
+        logEvent('info', 'judge_summary_done', { messages: messages.length, summaryChars: summary.length, latencyMs: latency });
         return summary;
       }
       return null;
     } catch (err) {
-      console.warn(`[Judge] summarize 失败: ${err.message}，降级为直接截断`);
+      logEvent('warn', 'judge_summary_failed_truncate_fallback', { error: err.message });
       return null;
     }
   }

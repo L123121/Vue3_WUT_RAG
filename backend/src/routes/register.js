@@ -4,6 +4,8 @@
 const express = require('express');
 const path = require('path');
 const config = require('../config');
+const { logEvent } = require('../services/observability.service');
+const { getEmbeddingHealth } = require('../services/embedding.service');
 
 function applyRoutes(app, chatLimiter) {
   const { router: apiRoutes } = require('./index');
@@ -30,6 +32,12 @@ function applyRoutes(app, chatLimiter) {
         status: hasApiConfig ? '配置正常' : '模拟模式',
       },
       storage: 'sqlite',
+      // 检索侧质量信号：embedding 的 isAvailable 恒为 true（降级后仍能产出向量），
+      // 只看它会复现 round-22 的"健康检查全绿但检索质量已塌"。
+      // 这里额外读降级计数，模型未加载/推理失败时 status 会变成 degraded。
+      retrieval: {
+        embedding: getEmbeddingHealth(),
+      },
     });
   });
 
@@ -74,7 +82,7 @@ function applyRoutes(app, chatLimiter) {
       try {
         textContent = await parseFile(file.path, originalName);
       } catch (e) {
-        console.warn('[ChatUpload] 文件解析失败:', e.message);
+        logEvent('warn', 'chat_upload_parse_failed', { error: e.message });
       }
 
       if (textContent && Buffer.isBuffer(textContent)) {
@@ -93,7 +101,7 @@ function applyRoutes(app, chatLimiter) {
         }
       });
     } catch (error) {
-      console.error('[ChatUpload] 上传失败:', error);
+      logEvent('error', 'chat_upload_failed', { error: error.message, stack: error.stack });
       res.status(500).json({ success: false, error: '文件上传失败' });
     }
   });
@@ -161,7 +169,7 @@ function fixFilenameEncoding(name) {
       return reencoded;
     }
   } catch (err) {
-    console.warn('[FileUpload] 文件名编码修复失败:', err.message);
+    logEvent('warn', 'file_upload_name_fix_failed', { error: err.message });
   }
   return name;
 }

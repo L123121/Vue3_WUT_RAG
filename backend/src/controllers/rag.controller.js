@@ -11,6 +11,7 @@ const { writeStreamEvent } = require('../utils/sse-events');
 const { upload, parseFile, cleanupFile } = require('../services/file-upload.service');
 const { recordAudit } = require('../services/quality-governance.service');
 const { vectorStore: vectorStoreSingleton } = require('../services/vector-store-qdrant.service');
+const { logEvent } = require('../services/observability.service');
 
 const ragService = new RagService(aiService);
 const memoryService = new MemoryService();
@@ -26,7 +27,7 @@ const FEEDBACK_EVAL_STATUSES = new Set(['queued', 'exported']);
 
 function saveChatMemory(userId, message, reply) {
   Promise.resolve(memoryService.saveChatMemory(userId, message, reply)).catch((error) => {
-    console.error('[RAG Memory] 保存失败:', error.message);
+    logEvent('error', 'rag_memory_save_failed', { error: error.message });
   });
 }
 
@@ -128,11 +129,11 @@ const ragChat = async (req, res, next) => {
       traceId: result.traceId || req.traceId,
       userId: req.userId,
       route: 'rag-direct',
-    }).catch((error) => console.warn('[QualityAudit] RAG 非流式记录失败:', error.message));
+    }).catch((error) => logEvent('warn', 'quality_audit_record_failed', { scope: 'rag_non_stream', error: error.message }));
     successResponse(res, result, 'RAG 处理完成');
     saveChatMemory(req.userId, message, result.reply);
   } catch (error) {
-    console.error('[RAG Controller] 错误:', error);
+    logEvent('error', 'rag_controller_error', { error: error.message, stack: error.stack });
     next(error);
   }
 };
@@ -194,14 +195,14 @@ const ragChatStream = async (req, res, next) => {
       traceId: audit.traceId,
       userId: req.userId,
       route: 'rag-direct-stream',
-    }).catch((error) => console.warn('[QualityAudit] RAG 流式记录失败:', error.message));
+    }).catch((error) => logEvent('warn', 'quality_audit_record_failed', { scope: 'rag_stream', error: error.message }));
 
     saveChatMemory(req.userId, message, fullReply);
   } catch (error) {
     cleanupClientClose();
     // 客户端已断开：不再向其写入错误事件
     if (abortController?.signal.aborted) return;
-    console.error('[RAG Stream] 错误:', error);
+    logEvent('error', 'rag_stream_error', { error: error.message, stack: error.stack });
     if (!res.headersSent) return next(error);
     try {
       res.write(`data: ${JSON.stringify({ traceId: req.traceId, error: error.message })}\n\n`);
@@ -266,7 +267,7 @@ const submitFeedback = async (req, res, next) => {
 
     successResponse(res, { feedbackId: feedback.id, rating: feedback.rating }, '评价已记录');
   } catch (error) {
-    console.error('[RAG Feedback] 提交失败:', error);
+    logEvent('error', 'rag_feedback_submit_failed', { error: error.message, stack: error.stack });
     next(error);
   }
 };
@@ -330,7 +331,7 @@ const listFeedback = async (req, res, next) => {
       },
     }, '获取反馈成功');
   } catch (error) {
-    console.error('[RAG Feedback] 查询失败:', error);
+    logEvent('error', 'rag_feedback_query_failed', { error: error.message, stack: error.stack });
     next(error);
   }
 };
@@ -369,7 +370,7 @@ const updateFeedbackEvalStatus = async (req, res, next) => {
 
     successResponse(res, { feedbackId, evalStatus: status }, status === 'queued' ? '已加入评测集候选' : '已标记为已导出');
   } catch (error) {
-    console.error('[RAG Feedback] 更新评测状态失败:', error);
+    logEvent('error', 'rag_feedback_status_update_failed', { error: error.message, stack: error.stack });
     next(error);
   }
 };
@@ -396,7 +397,7 @@ const retrieveParentCandidates = async (req, res, next) => {
 
     successResponse(res, result, '检索候选获取完成');
   } catch (error) {
-    console.error('[RAG Retrieval Eval] 错误:', error);
+    logEvent('error', 'rag_retrieval_eval_failed', { error: error.message, stack: error.stack });
     next(error);
   }
 };
@@ -421,7 +422,7 @@ const addDocument = async (req, res, next) => {
 
     successResponse(res, result, '文档添加成功');
   } catch (error) {
-    console.error('[Document] 添加失败:', error);
+    logEvent('error', 'document_add_failed', { error: error.message, stack: error.stack });
     next(error);
   }
 };
@@ -435,7 +436,7 @@ const deleteDocument = async (req, res, next) => {
     const result = await documentService.deleteDocument(id);
     successResponse(res, result, '文档删除成功');
   } catch (error) {
-    console.error('[Document] 删除失败:', error);
+    logEvent('error', 'document_delete_failed', { error: error.message, stack: error.stack });
     next(error);
   }
 };
@@ -453,7 +454,7 @@ const listDocuments = async (req, res, next) => {
     });
     successResponse(res, result, '获取成功');
   } catch (error) {
-    console.error('[Document] 获取列表失败:', error);
+    logEvent('error', 'document_list_failed', { error: error.message, stack: error.stack });
     next(error);
   }
 };
@@ -472,7 +473,7 @@ const getDocument = async (req, res, next) => {
 
     successResponse(res, result, '获取成功');
   } catch (error) {
-    console.error('[Document] 获取详情失败:', error);
+    logEvent('error', 'document_detail_failed', { error: error.message, stack: error.stack });
     next(error);
   }
 };
@@ -500,7 +501,7 @@ const getStats = async (req, res, _next) => {
       }
     }, '获取成功');
   } catch (error) {
-    console.error('[RAG Stats] 获取失败:', error);
+    logEvent('error', 'rag_stats_failed', { error: error.message, stack: error.stack });
     successResponse(res, {
       documents: { count: 0 },
       vectors: { count: 0 }
@@ -523,7 +524,7 @@ const uploadDocument = async (req, res, next) => {
     const originalName = req.file.originalname;
     const category = req.body.category || 'general';
 
-    console.log(`[FileUpload] 解析文件: ${originalName}`);
+    logEvent('info', 'file_upload_parse_start', { file: originalName });
 
     // 解析文件内容
     const content = await parseFile(filePath, originalName);
@@ -544,7 +545,7 @@ const uploadDocument = async (req, res, next) => {
       }
     });
 
-    console.log(`[FileUpload] 文件解析成功: ${originalName} -> ${result.chunkCount} 个片段`);
+    logEvent('info', 'file_upload_parse_done', { file: originalName, chunkCount: result.chunkCount });
 
     successResponse(res, {
       ...result,
@@ -552,7 +553,7 @@ const uploadDocument = async (req, res, next) => {
       contentLength: content.length
     }, result.message || '文件上传成功');
   } catch (error) {
-    console.error('[FileUpload] 上传失败:', error);
+    logEvent('error', 'file_upload_failed', { error: error.message, stack: error.stack });
     next(error);
   } finally {
     if (filePath) {

@@ -2,6 +2,7 @@
 
 const config = require("../config");
 const crypto = require("crypto");
+const { logEvent } = require('./observability.service');
 
 const SUPPORTED_MODELS = new Set(["step-tts-2", "step-tts-mini", "stepaudio-2.5-tts"]);
 const SUPPORTED_FORMATS = new Set(["wav", "mp3", "flac", "opus", "pcm"]);
@@ -244,7 +245,7 @@ class AudioService {
 
       if (!response.ok) {
         const detail = await response.text().catch(() => "");
-        console.error(`[Audio] StepFun 请求失败: ${response.status}`, detail.slice(0, 500));
+        logEvent('error', 'audio_upstream_request_failed', { status: response.status, detail: detail.slice(0, 500) });
         throw getUpstreamSpeechError(detail, response.status);
       }
 

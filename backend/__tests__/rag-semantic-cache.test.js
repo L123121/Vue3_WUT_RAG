@@ -87,7 +87,12 @@ describe('retrieveCandidates 语义缓存集成', () => {
     return {
       searchTopK: 50,
       rrfK: 60,
-      embeddingService: { embedHybrid: vi.fn().mockResolvedValue({ dense, sparse: {} }) },
+      // 检索链路走 embedQuery（查询侧带 BGE 指令前缀），文档侧才用 embedHybrid
+      embeddingService: {
+        embedHybrid: vi.fn().mockResolvedValue({ dense, sparse: {} }),
+        embedQuery: vi.fn().mockResolvedValue({ dense, sparse: {} }),
+        queryInstructionEnabled: true,
+      },
       vectorStore: { search: vi.fn().mockResolvedValue(searchResults) },
       _inferDocCategory: vi.fn().mockReturnValue(null),
       _recordTraceStage: vi.fn(),

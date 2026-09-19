@@ -1,6 +1,7 @@
 "use strict";
 
 const quotaService = require("../services/quota.service");
+const { logEvent } = require('../services/observability.service');
 
 /**
  * 用户级配额中间件
@@ -46,7 +47,7 @@ async function quotaMiddleware(req, res, next) {
     let settled = false;
     const releaseReservation = () => {
       quotaService.release(req.userId).catch((err) => {
-        console.error("[Quota] 回滚失败:", err.message);
+        logEvent('error', 'quota_rollback_failed', { error: err.message });
       });
     };
     const onFinish = () => {
@@ -68,7 +69,7 @@ async function quotaMiddleware(req, res, next) {
 
     next();
   } catch (err) {
-    console.error("[Quota] 预占失败:", err.message);
+    logEvent('error', 'quota_reserve_failed', { error: err.message });
     next(); // 配额系统故障时不阻塞请求
   }
 }

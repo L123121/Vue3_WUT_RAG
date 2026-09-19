@@ -2,6 +2,7 @@ const { Router } = require('express');
 
 const { requireAuth } = require('../middleware/auth.middleware');
 const { conversationStore } = require('../services/memory-store');
+const { logEvent } = require('../services/observability.service');
 
 const router = Router();
 
@@ -12,7 +13,7 @@ router.get('/', async (req, res) => {
     const conversations = await conversationStore.getConversations(req.userId);
     res.json({ success: true, data: conversations });
   } catch (error) {
-    console.error('获取会话列表失败:', error.message);
+    logEvent('error', 'conversation_list_failed', { error: error.message });
     res.status(500).json({ success: false, error: '获取会话列表失败' });
   }
 });
@@ -25,7 +26,7 @@ router.post('/', async (req, res) => {
     );
     res.json({ success: true, data: conversation });
   } catch (error) {
-    console.error('创建会话失败:', error.message);
+    logEvent('error', 'conversation_create_failed', { error: error.message });
     res.status(500).json({ success: false, error: '创建会话失败' });
   }
 });
@@ -43,7 +44,7 @@ router.get('/:id', async (req, res) => {
 
     res.json({ success: true, data: conversation });
   } catch (error) {
-    console.error('获取会话详情失败:', error.message);
+    logEvent('error', 'conversation_detail_failed', { error: error.message });
     res.status(500).json({ success: false, error: '获取会话详情失败' });
   }
 });
@@ -60,7 +61,7 @@ router.post('/:id/fork', async (req, res) => {
     }
     res.json({ success: true, data: forked });
   } catch (error) {
-    console.error('分叉会话失败:', error.message);
+    logEvent('error', 'conversation_fork_failed', { error: error.message });
     res.status(500).json({ success: false, error: '分叉会话失败' });
   }
 });
@@ -91,7 +92,7 @@ router.put('/:id', async (req, res) => {
 
     res.json({ success: true, data: conversation });
   } catch (error) {
-    console.error('更新会话失败:', error.message);
+    logEvent('error', 'conversation_update_failed', { error: error.message });
     res.status(500).json({ success: false, error: '更新会话失败' });
   }
 });
@@ -105,7 +106,7 @@ router.delete('/:id', async (req, res) => {
 
     res.json({ success: true, message: '删除成功' });
   } catch (error) {
-    console.error('删除会话失败:', error.message);
+    logEvent('error', 'conversation_delete_failed', { error: error.message });
     res.status(500).json({ success: false, error: '删除会话失败' });
   }
 });
@@ -119,7 +120,7 @@ router.delete('/:id/messages', async (req, res) => {
 
     res.json({ success: true, message: '清空成功' });
   } catch (error) {
-    console.error('清空消息失败:', error.message);
+    logEvent('error', 'conversation_clear_messages_failed', { error: error.message });
     res.status(500).json({ success: false, error: '清空消息失败' });
   }
 });

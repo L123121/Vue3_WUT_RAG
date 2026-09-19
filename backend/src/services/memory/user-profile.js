@@ -1,6 +1,7 @@
 "use strict";
 
 const { redis: store } = require('../memory-store');
+const { logEvent } = require('../observability.service');
 
 class UserProfile {
   async update(userId, profile) {
@@ -38,7 +39,7 @@ class UserProfile {
 
     if (Object.keys(updates).length > 0) {
       await this.update(userId, updates);
-      console.log(`[Memory] 自动提取画像:`, updates);
+      logEvent('info', 'memory_profile_extracted', { profile: updates });
     }
   }
 }

@@ -13,6 +13,7 @@ const { Router } = require('express');
 const crypto = require('crypto');
 const { requireAuth } = require('../middleware/auth.middleware');
 const { redis: store } = require('../services/memory-store');
+const { logEvent } = require('../services/observability.service');
 
 const router = Router();
 const SNAPSHOT_KEY = 'share:snapshots';
@@ -60,7 +61,7 @@ router.post('/', requireAuth, async (req, res) => {
 
     res.json({ success: true, data: { code, url: `/share/${code}`, createdAt: snapshot.createdAt } });
   } catch (error) {
-    console.error('[Share] 创建分享快照失败:', error.message);
+    logEvent('error', 'share_snapshot_create_failed', { error: error.message });
     res.status(500).json({ success: false, error: '创建分享失败' });
   }
 });
@@ -77,7 +78,7 @@ router.get('/:code', async (req, res) => {
     }
     res.json({ success: true, data: snapshot });
   } catch (error) {
-    console.error('[Share] 读取分享快照失败:', error.message);
+    logEvent('error', 'share_snapshot_read_failed', { error: error.message });
     res.status(500).json({ success: false, error: '读取分享失败' });
   }
 });

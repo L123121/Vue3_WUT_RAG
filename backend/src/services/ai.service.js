@@ -13,6 +13,7 @@ const { withActiveSpan, startLlmSpan, setLlmUsage, endLlmSpan } = require('./ote
 
 const LLM_CONCURRENCY = parseInt(process.env.LLM_CONCURRENCY || '3', 10);
 const { QueryCache } = require('../utils/query-cache');
+const { logEvent } = require('./observability.service');
 
 // history compaction 缓存（模块级单例）
 const compactCache = new QueryCache(
@@ -209,7 +210,7 @@ class AiService {
     try {
       const summary = await this.judgeService.summarize(early);
       if (summary) {
-        console.log(`[AI] 滚动摘要: ${early.length} 条早期消息 → ${summary.length} 字摘要`);
+        logEvent('info', 'ai_summary_compacted', { earlyCount: early.length, summaryChars: summary.length });
 
         // 缓存写入
         if (config?.rag?.cacheEnabled) {
@@ -223,7 +224,7 @@ class AiService {
         ];
       }
     } catch (err) {
-      console.warn(`[AI] 滚动摘要失败，降级为直接截断: ${err.message}`);
+      logEvent('warn', 'ai_summary_failed_truncate_fallback', { error: err.message });
     }
     return [...systemMessages, ...recent];
   }
@@ -238,7 +239,7 @@ class AiService {
 
   async getCompletion(message, history = [], opts = {}) {
     if (!this._hasKey()) {
-      console.warn('[AI] API Key 缺失，使用模拟模式');
+      logEvent('warn', 'ai_api_key_missing_mock_mode', { message: 'API Key 缺失，使用模拟模式' });
       return { content: this.getMockResponse(message), isMock: true, model: 'mock', usage: null };
     }
 
@@ -246,7 +247,7 @@ class AiService {
     const compacted = await this._compactHistory(history);
 
     const release = await llmQueue.acquire();
-    console.log(`[AI 队列] 获取到槽位，队列中待处理: ${llmQueue.pending}`);
+    logEvent('info', 'ai_queue_slot_acquired', { pending: llmQueue.pending });
     try {
       return await this._doGetCompletion(message, compacted, opts);
     } finally {
@@ -260,7 +261,7 @@ class AiService {
       return await this._requestProvider(this.primary, message, history, opts);
     } catch (err) {
       if (!this.fallback) throw err;
-      console.warn(`[AI] 主 provider 失败 (${err.message})，切换到备用 provider`);
+      logEvent('warn', 'ai_primary_provider_failed_switch', { error: err.message });
       return await this._requestProvider(this.fallback, message, history, opts);
     }
   }
@@ -295,7 +296,7 @@ class AiService {
       if (opts.timeout) options.timeout = opts.timeout;
       if (opts.retries !== undefined) options.retries = opts.retries;
 
-      console.log(`[AI] ${options.hostname}${options.path} model=${provider.model} bodyLen=${body.length} tools=${payload.tools?.length || 0}`);
+      logEvent('info', 'ai_request', { host: options.hostname, path: options.path, model: provider.model, bodyLen: body.length, tools: payload.tools?.length || 0 });
 
       const startTime = Date.now();
       const result = await request(options, body);
@@ -313,7 +314,7 @@ class AiService {
       }
 
       if (content || toolCalls) {
-        console.log(`[AI] 响应 ${content.length} 字符, tool_calls=${toolCalls?.length || 0}`);
+        logEvent('info', 'ai_response', { outputChars: content.length, toolCalls: toolCalls?.length || 0 });
         const usage = result.data?.usage || null;
         operationalMetrics.recordLlmUsage({ model: result.data?.model || provider.model, usage, traceId: opts.traceId, latencyMs: latency });
         setLlmUsage(llmSpan, usage);
@@ -327,7 +328,7 @@ class AiService {
         };
       } else {
         const msg = `AI 服务返回空响应: ${JSON.stringify(result.data).substring(0, 200)}`;
-        console.warn('[AI]', msg);
+        logEvent('warn', 'ai_empty_response', { message: msg });
         // 空响应视为可恢复错误，抛出后触发 fallback
         throw new Error(msg);
       }
@@ -355,7 +356,7 @@ class AiService {
 
     // 排队等待 LLM 槽位，整个流式过程占用一个槽位
     const release = await llmQueue.acquire();
-    console.log(`[AI 队列] 流式获取到槽位，队列中待处理: ${llmQueue.pending}`);
+    logEvent('info', 'ai_stream_queue_slot_acquired', { pending: llmQueue.pending });
 
     try {
       yield* this._doGetCompletionStream(message, compacted, opts);
@@ -380,10 +381,10 @@ class AiService {
         if (streamed.any) {
           // 中途失败：已向调用方输出部分内容，备用 provider 重发整段会造成
           // "半截回答 + 完整回答" 拼接重复，只能如实向上抛（上层有收尾/降级逻辑）
-          console.warn(`[AI 流式] 主 provider 中途失败（已输出内容，不切备用）: ${err.message}`);
+          logEvent('warn', 'ai_stream_midway_failure_no_fallback', { error: err.message });
           throw err;
         }
-        console.warn(`[AI 流式] 主 provider 连接建立前失败 (${err.message})，切换到备用 provider`);
+        logEvent('warn', 'ai_stream_primary_failed_switch', { error: err.message });
       }
       // 主 provider 失败，尝试备用
       yield* this._streamProvider(this.fallback, message, history, opts);
@@ -423,7 +424,7 @@ class AiService {
     options.headers['Content-Length'] = Buffer.byteLength(body, 'utf8');
 
     const streamStart = Date.now();
-    console.log(`[AI 流式] ${options.hostname}${options.path} model=${provider.model} bodyLen=${body.length} tools=${payload.tools?.length || 0}`);
+    logEvent('info', 'ai_stream_request', { host: options.hostname, path: options.path, model: provider.model, bodyLen: body.length, tools: payload.tools?.length || 0 });
 
     // LLM 流式 span：生成器无法 startActiveSpan，手动起/收（父取活跃上下文），usage 由 _parseStream 补
     const llmSpan = startLlmSpan(provider, { stream: true });
@@ -523,7 +524,7 @@ class AiService {
             return;
           }
         } catch (err) {
-          console.warn('[AI 流式] SSE 解析失败:', err.message);
+          logEvent('warn', 'ai_stream_sse_parse_failed', { error: err.message });
         }
       }
     }
@@ -562,14 +563,14 @@ class AiService {
       }))
       .filter((tc) => {
         if (!tc.function.name) {
-          console.warn('[AI 流式] 丢弃 name 为空的 tool_call（首片可能丢失）:', tc.id);
+          logEvent('warn', 'ai_stream_tool_call_empty_name_dropped', { id: tc.id });
           return false;
         }
         if (tc.function.arguments && tc.function.arguments !== '{}') {
           try {
             JSON.parse(tc.function.arguments);
           } catch {
-            console.warn('[AI 流式] tool_call arguments 残缺，降级为空参数:', tc.function.name);
+            logEvent('warn', 'ai_stream_tool_call_args_incomplete', { tool: tc.function.name });
             tc.function.arguments = '{}';
           }
         }

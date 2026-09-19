@@ -11,6 +11,7 @@ const { gfm } = require('turndown-plugin-gfm');
 const config = require('../config');
 // OCR 服务懒加载（mupdf 为 ESM 动态导入，require 本身无副作用）
 const { OcrService } = require('./ocr.service');
+const { logEvent } = require('./observability.service');
 const ocrService = new OcrService();
 
 // 延迟加载 pdf-parse（可能在新版本中有兼容性问题）
@@ -18,7 +19,7 @@ let pdfParse = null;
 try {
   pdfParse = require('pdf-parse');
 } catch (e) {
-  console.warn('[FileUpload] pdf-parse 加载失败，PDF 解析功能不可用:', e.message);
+  logEvent('warn', 'file_upload_pdfparse_load_failed', { message: 'pdf-parse 加载失败，PDF 解析功能不可用', error: e.message });
 }
 
 // 配置文件上传
@@ -118,9 +119,9 @@ function saveBase64Image(dataUri, _alt) {
 
   try {
     fs.writeFileSync(filePath, data);
-    console.log(`[FileUpload] 已保存图片: ${filename} (${data.length} bytes)`);
+    logEvent('info', 'file_upload_image_saved', { filename, bytes: data.length });
   } catch (err) {
-    console.warn(`[FileUpload] 图片保存失败: ${err.message}`);
+    logEvent('warn', 'file_upload_image_save_failed', { error: err.message });
   }
 
   return filename;
@@ -318,7 +319,7 @@ async function parsePDF(filePath) {
       const data = await pdfParse(dataBuffer);
       text = data.text || '';
     } catch (err) {
-      console.warn(`[FileUpload] pdf-parse 提取失败: ${err.message}`);
+      logEvent('warn', 'file_upload_pdf_extract_failed', { error: err.message });
     }
   }
 
@@ -328,7 +329,7 @@ async function parsePDF(filePath) {
       if (pdfParse) return text;
       throw new Error('PDF 解析功能不可用，请检查 pdf-parse 安装');
     }
-    console.log(`[FileUpload] PDF 文本层过短(${text.trim().length}字)，判定为扫描件，转 OCR 识别`);
+    logEvent('info', 'file_upload_scanned_pdf_detected', { textChars: text.trim().length, message: 'PDF 文本层过短，判定为扫描件，转 OCR 识别' });
     try {
       const ocrText = await ocrService.ocrPdf(filePath);
       if (ocrText && ocrText.trim().length > 0) {
@@ -336,7 +337,7 @@ async function parsePDF(filePath) {
         return `> 📄 该 PDF 为扫描件，已通过视觉模型 OCR 识别\n\n${ocrText}`;
       }
     } catch (err) {
-      console.warn(`[FileUpload] 扫描件 OCR 失败: ${err.message}`);
+      logEvent('warn', 'file_upload_scanned_ocr_failed', { error: err.message });
     }
     return text;
   }
@@ -349,11 +350,10 @@ async function parsePDF(filePath) {
     try {
       const tablePages = detectTablePages(text);
       if (tablePages.length > 0) {
-        console.log(
-          `[FileUpload] 检测到 ${tablePages.length} 个疑似表格页（第 ${tablePages
-            .map((p) => p + 1)
-            .join(',')} 页），按页 OCR 重建表格结构`,
-        );
+        logEvent('info', 'file_upload_table_pages_detected', {
+          count: tablePages.length,
+          pageNumbers: tablePages.map((p) => p + 1).join(','),
+        });
         const ocrResults = await ocrService.ocrPdf(filePath, {
           pages: tablePages,
           returnMap: true,
@@ -363,7 +363,7 @@ async function parsePDF(filePath) {
         }
       }
     } catch (err) {
-      console.warn(`[FileUpload] 表格页 OCR 失败，回退原文: ${err.message}`);
+      logEvent('warn', 'file_upload_table_ocr_failed_fallback', { error: err.message });
     }
   }
 
@@ -478,7 +478,7 @@ async function extractDocxFormulas(filePath) {
 
     return formulas;
   } catch (err) {
-    console.warn(`[FileUpload] 公式提取失败: ${err.message}`);
+    logEvent('warn', 'file_upload_formula_extract_failed', { error: err.message });
     return [];
   }
 }
@@ -544,7 +544,7 @@ function cleanupFile(filePath) {
       fs.unlinkSync(filePath);
     }
   } catch (error) {
-    console.warn('[FileUpload] 清理文件失败:', error.message);
+    logEvent('warn', 'file_upload_cleanup_file_failed', { error: error.message });
   }
 }
 
@@ -569,12 +569,12 @@ function cleanOldUploads() {
           removed++;
         }
       } catch (err) {
-        console.warn(`[FileUpload] 清理 ${name} 失败:`, err.message);
+        logEvent('warn', 'file_upload_cleanup_entry_failed', { file: name, error: err.message });
       }
     }
-    if (removed > 0) console.log(`[FileUpload] 已清理 ${removed} 个过期上传文件`);
+    if (removed > 0) logEvent('info', 'file_upload_cleanup_done', { removed });
   } catch (error) {
-    console.warn('[FileUpload] 上传目录清理失败:', error.message);
+    logEvent('warn', 'file_upload_cleanup_failed', { error: error.message });
   }
 }
 

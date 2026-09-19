@@ -1,5 +1,7 @@
 'use strict';
 
+const { logEvent } = require('./observability.service');
+
 const fs = require('fs');
 const path = require('path');
 
@@ -38,7 +40,7 @@ class OperationalMetricsPersistence {
     try {
       return JSON.parse(row.state_json);
     } catch (error) {
-      console.warn('[OpsMetrics] 持久化状态解析失败，将从零开始:', error.message);
+      logEvent('warn', 'op_metrics_state_parse_failed_reset', { error: error.message });
       return null;
     }
   }
@@ -60,7 +62,7 @@ function createDefaultOperationalMetricsPersistence() {
   try {
     return new OperationalMetricsPersistence();
   } catch (error) {
-    console.warn('[OpsMetrics] SQLite 持久化初始化失败，将仅使用内存统计:', error.message);
+    logEvent('warn', 'op_metrics_persistence_init_failed_memory_only', { error: error.message });
     return null;
   }
 }

@@ -1,5 +1,7 @@
 "use strict";
 
+const { logEvent } = require('./observability.service');
+
 const config = require('../config');
 const api = require('@opentelemetry/api');
 
@@ -40,7 +42,7 @@ function initTracing(options = {}) {
     serviceName: process.env.OTEL_SERVICE_NAME || 'wuli-elf-backend',
   });
   sdk.start();
-  console.log(`[OTel] tracing 已启用 → ${process.env.OTEL_EXPORTER_OTLP_ENDPOINT}`);
+  logEvent('info', 'otel_tracing_enabled', { endpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT });
   return sdk;
 }
 
@@ -51,9 +53,9 @@ async function shutdownTracing() {
   sdk = null;
   try {
     await closing.shutdown();
-    console.log('[OTel] tracing 已关闭（span 已 flush）');
+    logEvent('info', 'otel_tracing_shutdown_done', { message: 'tracing 已关闭（span 已 flush）' });
   } catch (err) {
-    console.warn('[OTel] shutdown 失败:', err.message);
+    logEvent('warn', 'otel_tracing_shutdown_failed', { error: err.message });
   }
 }
 
@@ -126,7 +128,7 @@ function withHttpRootSpan(req, res, fn) {
       return fn({ otelTraceId });
     });
   } catch (err) {
-    console.warn('[OTel] HTTP span 创建失败，降级直通:', err.message);
+    logEvent('warn', 'otel_http_span_create_failed_passthrough', { error: err.message });
     return fn(null);
   }
 }

@@ -4,6 +4,7 @@ const { redis: store } = require('../memory-store');
 const { EmbeddingService } = require('../embedding.service');
 const { parseRedisList } = require('./helpers');
 const config = require('../../config');
+const { logEvent } = require('../observability.service');
 
 const MAX_LONG_TERM = 100;
 const KEYWORD_BOOST = 0.3;
@@ -76,7 +77,7 @@ class LongTermMemory {
         || this._findSemanticDuplicate(list, entry);
       if (dup) {
         this._mergeInto(dup, entry);
-        console.log(`[Memory] 去重合并[${MEMORY_TYPES[dup.type] || dup.type}]: "${String(entry.content).slice(0, 30)}..." → ${dup.id}（merged ${dup.mergedCount} 次）`);
+        logEvent('info', 'memory_dedupe_merged', { type: MEMORY_TYPES[dup.type] || dup.type, id: dup.id, mergedCount: dup.mergedCount, content: String(entry.content).slice(0, 30) });
         await replaceList(key, list);
         return dup;
       }
@@ -95,7 +96,7 @@ class LongTermMemory {
           }
         });
         const [removed] = list.splice(victimIdx, 1);
-        if (removed) console.log(`[Memory] 超出上限，驱逐低价值记忆: ${removed.id}（score=${victimScore.toFixed(2)}）`);
+        if (removed) logEvent('info', 'memory_evicted_low_value', { id: removed.id, score: victimScore.toFixed(2) });
       }
       await replaceList(key, list);
       return entry;
@@ -251,7 +252,7 @@ class LongTermMemory {
       const result = await this.embedder.embedHybrid(entry.content);
       entry.embedding = result?.dense || null;
     } catch (err) {
-      console.warn(`[Memory] embedding 计算失败: ${err.message}`);
+      logEvent('warn', 'memory_embedding_failed', { error: err.message });
     }
   }
 

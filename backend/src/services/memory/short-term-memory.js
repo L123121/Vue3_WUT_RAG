@@ -2,6 +2,7 @@
 
 const { redis: store } = require("../memory-store");
 const { parseRedisList } = require("./helpers");
+const { logEvent } = require('../observability.service');
 
 const MAX_SHORT_TERM = 8;
 const COMPRESS_THRESHOLD = 6;
@@ -58,7 +59,7 @@ class ShortTermMemory {
       const compressed = (result.content || "").trim().replace(/^["「『]|["」』]$/g, "");
       if (compressed && compressed.length > 5) return compressed;
     } catch (err) {
-      console.warn(`[ShortTermMemory] 压缩失败: ${err.message}`);
+      logEvent('warn', 'memory_compaction_failed', { error: err.message });
     }
     return items.map((i) => i.content).join("；");
   }

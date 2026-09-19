@@ -17,6 +17,7 @@
 
 const config = require('../config');
 const { request } = require('../utils/httpClient');
+const { logEvent } = require('./observability.service');
 
 class OcrService {
   constructor() {
@@ -34,7 +35,7 @@ class OcrService {
   _loadMupdf() {
     if (!this._mupdfPromise) {
       this._mupdfPromise = import('mupdf').catch((err) => {
-        console.warn('[OCR] mupdf 加载失败，扫描件 OCR 不可用:', err.message);
+        logEvent('warn', 'ocr_mupdf_load_failed', { message: 'mupdf 加载失败，扫描件 OCR 不可用', error: err.message });
         this._mupdfPromise = null; // 允许下次重试
         throw err;
       });
@@ -92,10 +93,10 @@ class OcrService {
     const content = result.data?.choices?.[0]?.message?.content || '';
 
     if (!content) {
-      console.warn('[OCR] 视觉模型返回空内容');
+      logEvent('warn', 'ocr_empty_content', { message: '视觉模型返回空内容' });
       return '';
     }
-    console.log(`[OCR] 图片识别 ${content.length} 字符 (detail=${detail}, ${Date.now() - start}ms)`);
+    logEvent('info', 'ocr_image_done', { chars: content.length, detail, latencyMs: Date.now() - start });
     return content.trim();
   }
 
@@ -129,7 +130,7 @@ class OcrService {
       ? [...new Set(opts.pages)].filter((p) => p >= 0 && p < maxPages).sort((a, b) => a - b)
       : Array.from({ length: maxPages }, (_, i) => i);
 
-    console.log(`[OCR] PDF 共 ${totalPages} 页，识别 ${targets.length} 页`);
+    logEvent('info', 'ocr_pdf_start', { totalPages, pages: targets.length });
 
     // 并发识别：渲染快、识别慢，页级并发控制成本与限流
     const concurrency = Math.min(opts.concurrency || this.concurrency, targets.length);
@@ -151,7 +152,7 @@ class OcrService {
           const text = await this.recognizeImage(png, 'image/png', opts);
           results[pos] = { pageIndex, text };
         } catch (err) {
-          console.warn(`[OCR] 第 ${pageIndex + 1} 页识别失败: ${err.message}`);
+          logEvent('warn', 'ocr_page_failed', { page: pageIndex + 1, error: err.message });
           results[pos] = { pageIndex, text: '' };
         }
       }

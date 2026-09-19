@@ -1,8 +1,13 @@
 "use strict";
 
+const { logEvent } = require('./observability.service');
+
 const crypto = require('crypto');
 const config = require('../config');
-const { EmbeddingService } = require('./embedding.service');
+const { EmbeddingService, SparseStats, getSparseStats, setSparseStats } = require('./embedding.service');
+
+/** 稀疏通道语料统计的持久化 key（含 df / docCount / totalLen） */
+const SPARSE_STATS_KEY = 'sparse:stats';
 
 /**
  * 文档索引管道
@@ -60,7 +65,7 @@ class IndexingService {
       }
       return map;
     } catch (err) {
-      console.warn(`[Indexing] 取回旧向量失败，退化为全量重算: ${err.message}`);
+      logEvent('warn', 'indexing_reuse_fetch_failed_full_recompute', { error: err.message });
       return null;
     }
   }
@@ -448,14 +453,73 @@ class IndexingService {
    * @param {Map|null} [options.oldVectors] - 内容 hash → 旧向量复用表（增量重索引用）
    */
   async indexDocument(docId, title, content, category = 'general', { oldVectors = null } = {}) {
-    // 1. 按段落分割（父级）
-    const paragraphs = this._splitParagraphs(content);
-    if (!paragraphs.length) {
-      console.warn(`[Indexing] 文档 ${docId} 段落数为 0，跳过索引`);
-      return 0;
+    // 0. 语料统计必须在编码前就绪：稀疏权重里的 idf 依赖它，
+    //    查询侧读的是同一份（持久化）统计，否则两侧错配
+    await this._ensureSparseStatsLoaded();
+
+    // 1~2. 段落（父级）→ 句子（子级）两层切片
+    const { paragraphs, childChunks, metadatas, typeTally } = this._chunkDocument(docId, title, content, category);
+    if (childChunks.length === 0) return 0;
+
+    logEvent('info', 'indexing_doc_chunked', {
+      paragraphs: paragraphs.length,
+      childChunks: childChunks.length,
+      faq: typeTally.faq,
+      table: typeTally.table,
+      list: typeTally.list,
+    });
+
+    // 3. 向量化子级：hash 命中旧向量直接复用，只对新增/变化的 chunk 调用模型
+    const reused = new Array(childChunks.length).fill(null);
+    const freshIdx = [];
+    const freshTexts = [];
+    if (oldVectors) {
+      childChunks.forEach((text, i) => {
+        const hit = oldVectors.get(this._contentHash(text));
+        if (hit) reused[i] = hit;
+        else freshIdx.push(i);
+      });
+    } else {
+      freshIdx.push(...childChunks.map((_, i) => i));
     }
 
-    // 2. 按句子分割（子级），构造子块数据
+    if (freshIdx.length > 0) {
+      freshIdx.forEach(i => freshTexts.push(childChunks[i]));
+      const freshEmbeddings = await this.embeddingService.embedBatch(freshTexts);
+      if (freshEmbeddings.some(e => !e?.dense)) {
+        logEvent('warn', 'indexing_embed_failed_skip', { docId });
+        return 0;
+      }
+      freshIdx.forEach((chunkIdx, j) => { reused[chunkIdx] = freshEmbeddings[j]; });
+    }
+
+    this._lastReuseStats = {
+      reused: childChunks.length - freshIdx.length,
+      embedded: freshIdx.length,
+      total: childChunks.length,
+    };
+    if (oldVectors) {
+      logEvent('info', 'indexing_incremental_reuse', { reused: childChunks.length - freshIdx.length, total: childChunks.length, recomputed: freshIdx.length });
+    }
+
+    // 4. 构造 point ID（docId_sent_i，确定性可重放）并存储
+    const ids = childChunks.map((_, i) => `${docId}_sent_${i}`);
+
+    await this.vectorStore.addChunks(ids, reused, childChunks, metadatas);
+    logEvent('info', 'indexing_doc_done', { docId, vectorCount: childChunks.length });
+    return childChunks.length;
+  }
+
+  /**
+   * 段落 → 句子两层切片，返回子块文本与元数据。
+   *
+   * 抽成独立方法的原因：索引本身与稀疏通道的 df 预统计都要走**完全同一次**切片，
+   * 各写一份的话，统计用的块和真正入库的块会悄悄漂移（df 与向量对不上）。
+   *
+   * @returns {{paragraphs: string[], childChunks: string[], metadatas: object[], typeTally: object}}
+   */
+  _chunkDocument(docId, title, content, category) {
+    const paragraphs = this._splitParagraphs(content);
     const childChunks = [];
     const metadatas = [];
     const typeTally = { prose: 0, faq: 0, table: 0, list: 0 };
@@ -479,60 +543,81 @@ class IndexingService {
       }
     }
 
-    if (!childChunks.length) {
-      console.warn(`[Indexing] 文档 ${docId} 句子数为 0，跳过索引`);
-      return 0;
+    if (childChunks.length === 0) {
+      logEvent('warn', paragraphs.length ? 'indexing_skipped_empty_sentences' : 'indexing_skipped_empty_paragraphs', { docId });
     }
 
-    console.log(`[Indexing] 文档切片: ${paragraphs.length} 段落 → ${childChunks.length} 句子` +
-      (typeTally.faq + typeTally.table + typeTally.list > 0
-        ? `（场景化子块: FAQ ${typeTally.faq} / 表格 ${typeTally.table} / 列表 ${typeTally.list}）`
-        : ''));
+    return { paragraphs, childChunks, metadatas, typeTally };
+  }
 
-    // 3. 向量化子级：hash 命中旧向量直接复用，只对新增/变化的 chunk 调用模型
-    const reused = new Array(childChunks.length).fill(null);
-    const freshIdx = [];
-    const freshTexts = [];
-    if (oldVectors) {
-      childChunks.forEach((text, i) => {
-        const hit = oldVectors.get(this._contentHash(text));
-        if (hit) reused[i] = hit;
-        else freshIdx.push(i);
-      });
-    } else {
-      freshIdx.push(...childChunks.map((_, i) => i));
+  /**
+   * 注入的 embedding 服务是否具备语料统计能力。
+   * 能力检测而非假设：替身/精简实现只保证 embedBatch，语料统计是可选增强，
+   * 缺了它整套索引流程必须照常跑（稀疏权重退回纯 tf）。
+   */
+  get _sparseStatsSupported() {
+    return typeof this.embeddingService?.buildSparseStats === 'function';
+  }
+
+  /**
+   * 构建并激活稀疏通道的语料统计（df / 文档数 / 平均块长），随后持久化。
+   *
+   * 为什么必须持久化：idf 会被烤进文档侧稀疏向量，进程重启后查询侧必须能拿到
+   * **同一份** idf；否则就成了"文档侧带 idf、查询侧不带"的错配，点积被系统性压低。
+   *
+   * @param {Array<{id:string,title:string,content:string,category:string}>} docs
+   */
+  async _rebuildSparseStats(docs) {
+    if (!this._sparseStatsSupported) return null;
+
+    const chunkTexts = [];
+    for (const doc of docs) {
+      const { childChunks } = this._chunkDocument(doc.id, doc.title, doc.content, doc.category);
+      chunkTexts.push(...childChunks);
     }
 
-    if (freshIdx.length > 0) {
-      freshIdx.forEach(i => freshTexts.push(childChunks[i]));
-      const freshEmbeddings = await this.embeddingService.embedBatch(freshTexts);
-      if (freshEmbeddings.some(e => !e?.dense)) {
-        console.warn(`[Indexing] 文档 ${docId} 向量化失败，跳过索引`);
-        return 0;
+    const stats = this.embeddingService.buildSparseStats(chunkTexts);
+    setSparseStats(stats);
+    logEvent('info', 'indexing_sparse_stats_built', {
+      docCount: stats.docCount,
+      terms: stats.df.size,
+      avgLen: Number(stats.avgLen.toFixed(2)),
+    });
+
+    try {
+      const { redis: store } = require('./memory-store');
+      await store.hset(SPARSE_STATS_KEY, { stats: stats.toJSON(), updatedAt: Date.now() });
+    } catch (err) {
+      logEvent('warn', 'indexing_sparse_stats_persist_failed', { error: err.message });
+    }
+
+    return stats;
+  }
+
+  /**
+   * 确保内存里有语料统计（进程重启后从持久化恢复）。
+   * 拿不到就保持 null —— 此时文档侧与查询侧会一致退回纯 tf，不会单侧带 idf。
+   */
+  async _ensureSparseStatsLoaded() {
+    if (!this._sparseStatsSupported || getSparseStats()) return;
+    try {
+      const { redis: store } = require('./memory-store');
+      const raw = await store.hgetall(SPARSE_STATS_KEY);
+      if (raw?.stats?.keys) {
+        setSparseStats(SparseStats.fromJSON(raw.stats));
+        logEvent('info', 'indexing_sparse_stats_loaded', {
+          docCount: raw.stats.docCount || 0,
+          terms: (raw.stats.keys || []).length,
+        });
       }
-      freshIdx.forEach((chunkIdx, j) => { reused[chunkIdx] = freshEmbeddings[j]; });
+    } catch (err) {
+      logEvent('warn', 'indexing_sparse_stats_load_failed', { error: err.message });
     }
-
-    this._lastReuseStats = {
-      reused: childChunks.length - freshIdx.length,
-      embedded: freshIdx.length,
-      total: childChunks.length,
-    };
-    if (oldVectors) {
-      console.log(`[Indexing] 增量复用: ${childChunks.length - freshIdx.length}/${childChunks.length} 个向量免算，重算 ${freshIdx.length} 个`);
-    }
-
-    // 4. 构造 point ID（docId_sent_i，确定性可重放）并存储
-    const ids = childChunks.map((_, i) => `${docId}_sent_${i}`);
-
-    await this.vectorStore.addChunks(ids, reused, childChunks, metadatas);
-    console.log(`[Indexing] 文档索引完成: ${docId}, ${childChunks.length} 个句子向量`);
-    return childChunks.length;
   }
 
   async removeDocument(docId) {
     await this.vectorStore.deleteByDocId(docId);
-    console.log(`[Indexing] 文档索引已删除: ${docId}`);
+    logEvent('info', 'indexing_doc_deleted', { docId });
   }
 
   /**
@@ -553,17 +638,25 @@ class IndexingService {
    */
   async reindexAll(docs, { mode = 'rebuild' } = {}) {
     if (mode === 'incremental') {
-      console.log(`[Indexing] 开始增量重索引，共 ${docs.length} 个文档`);
+      // 增量模式**不重建**统计：idf 一变，未变块复用的旧向量就与新查询向量错配。
+      // 这里只确保统计就绪（进程重启后从持久化恢复），复用才是安全的。
+      await this._ensureSparseStatsLoaded();
+      logEvent('info', 'indexing_incremental_start', { docCount: docs.length });
       let totalChunks = 0;
       for (const doc of docs) {
         totalChunks += await this.reindexDocument(doc.id, doc.title, doc.content, doc.category);
       }
       const { reused, embedded } = this.lastReuseStats;
-      console.log(`[Indexing] 增量重索引完成，共 ${totalChunks} 个句子向量（复用 ${reused}，重算 ${embedded}）`);
+      logEvent('info', 'indexing_incremental_done', { totalChunks, reused, embedded });
       return totalChunks;
     }
 
-    console.log(`[Indexing] 开始全量重建索引，共 ${docs.length} 个文档`);
+    logEvent('info', 'indexing_full_rebuild_start', { docCount: docs.length });
+
+    // 先统计、再编码：df 必须覆盖整个语料。边统计边编码的话，靠前的文档用的是
+    // "只见过一部分语料"的 idf，同一个词在不同文档里权重不同，稀疏分数失去可比性。
+    await this._rebuildSparseStats(docs);
+
     await this.vectorStore.resetCollection();
 
     let totalChunks = 0;
@@ -571,7 +664,7 @@ class IndexingService {
       const count = await this.indexDocument(doc.id, doc.title, doc.content, doc.category);
       totalChunks += count;
     }
-    console.log(`[Indexing] 全量重建完成，共 ${totalChunks} 个句子向量`);
+    logEvent('info', 'indexing_full_rebuild_done', { totalChunks });
     return totalChunks;
   }
 }

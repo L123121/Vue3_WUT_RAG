@@ -88,13 +88,16 @@ async function retrieveCandidates(svc, query, options = {}) {
     const embeddingStart = Date.now();
     currentStage = 'embedding';
     currentStageStart = embeddingStart;
-    queryEmbedding = await svc.embeddingService.embedHybrid(query);
+    queryEmbedding = await svc.embeddingService.embedQuery(query);
     trace.embedding = {
       ok: !!queryEmbedding?.dense,
       dense: !!queryEmbedding?.dense,
       sparse: !!queryEmbedding?.sparse && Object.keys(queryEmbedding.sparse).length > 0,
       latency: Date.now() - embeddingStart,
       model: queryEmbedding?.model || null,
+      // BGE-zh v1.5 是非对称检索模型：查询侧走 embedQuery（带指令前缀），文档侧不加。
+      // 记进 trace，A/B 对比前缀收益时可直接确认该次检索走的是哪条路径。
+      queryInstruction: svc.embeddingService.queryInstructionEnabled === true,
     };
     metrics.recordLatency('embedding', trace.embedding.latency);
     svc._recordTraceStage(tracer, 'embedding', embeddingStart, true, {
@@ -115,7 +118,7 @@ async function retrieveCandidates(svc, query, options = {}) {
           topScore: hit.value.candidates[0]?.score || 0,
           channels: [...new Set(hit.value.candidates.flatMap(item => item._retrievalChannels || []))],
         };
-        console.log(`[SemanticCache] 命中 (sim=${hit.similarity}) "${hit.query}" → 复用 ${hit.value.candidates.length} 条候选`);
+        logEvent('info', 'rag_semantic_cache_hit', { similarity: hit.similarity, query: hit.query, reusedCandidates: hit.value.candidates.length });
         return { candidates: hit.value.candidates, trace, vectorResults: hit.value.candidates };
       }
     }
@@ -461,7 +464,7 @@ async function dualRetrieve(svc, message, history, options = {}) {
   if (rewrittenResult) {
     const rewriteRatio = rewrittenResult.candidates.length / Math.max(originalResult.candidates.length, 1);
     if (rewriteRatio < 0.3 && originalResult.candidates.length > 3) {
-      console.log(`[QueryRewrite] 改写结果异常（改写${rewrittenResult.candidates.length}条 vs 原文${originalResult.candidates.length}条），降级为原文为主`);
+      logEvent('info', 'rag_query_rewrite_anomalous_fallback', { rewrittenCount: rewrittenResult.candidates.length, originalCount: originalResult.candidates.length });
     }
   }
 
@@ -494,7 +497,7 @@ async function dualRetrieve(svc, message, history, options = {}) {
       rewrittenCount: rewrittenResult ? rewrittenResult.candidates.length : 0,
       mergedCount: mergedCandidates.length,
     };
-    console.log(`[QueryRewrite] 多路检索: 原文${originalResult.candidates.length}条 + 改写${rewrittenResult ? rewrittenResult.candidates.length : 0}条 → 合并${mergedCandidates.length}条`);
+    logEvent('info', 'rag_multi_query_merged', { originalCount: originalResult.candidates.length, rewrittenCount: rewrittenResult ? rewrittenResult.candidates.length : 0, mergedCount: mergedCandidates.length });
   }
   if (decompose.subQueries.length > 0) {
     trace.queryDecompose = {
@@ -503,7 +506,7 @@ async function dualRetrieve(svc, message, history, options = {}) {
       originalCount: originalResult.candidates.length,
       mergedCount: mergedCandidates.length,
     };
-    console.log(`[QueryDecompose] ${decompose.type}: "${message}" → 子查询 [${decompose.subQueries.join(' | ')}]，候选 ${originalResult.candidates.length} → ${mergedCandidates.length}`);
+    logEvent('info', 'rag_query_decompose_retrieval', { type: decompose.type, message, subQueries: decompose.subQueries.join(' | '), originalCount: originalResult.candidates.length, mergedCount: mergedCandidates.length });
   }
 
   return { candidates: mergedCandidates, trace, rewrittenQuery };

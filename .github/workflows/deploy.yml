@@ -66,6 +66,9 @@ jobs:
       - name: Lint
         run: npm run lint:check
 
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Audit production dependencies
         run: |
           npm audit --omit=dev --audit-level=high
@@ -148,7 +151,9 @@ jobs:
   # ========== 3. 部署到 ECS ==========
   deploy:
     name: Deploy to Alibaba Cloud ECS
-    needs: [build, security-scan]
+    # check 显式列出：build 已 needs: check，链路本就传递式成立；
+    # 显式声明可避免日后调整 build 依赖时静默放开测试门禁。
+    needs: [check, build, security-scan]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

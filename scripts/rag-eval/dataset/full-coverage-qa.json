@@ -1,34 +1,335 @@
 [
-  {"id":"C01","question":"武汉理工大学的校训是什么？","ground_truth":"厚德博学、追求卓越","category":"学校概况","difficulty":"easy","relevant_doc_ids":["doc_9a78cba7-14c0-435e-8823-d79f9ea9572c","doc_4dcd7c94-8c2f-4fdc-ae18-3669c59dfd36"]},
-  {"id":"C02","question":"武理是哪三所学校合并的？什么时候合并的？","ground_truth":"2000年5月27日，原武汉工业大学、原武汉交通科技大学和原武汉汽车工业大学三校合并组建","category":"学校概况","difficulty":"easy","relevant_doc_ids":["doc_9a78cba7-14c0-435e-8823-d79f9ea9572c","doc_4dcd7c94-8c2f-4fdc-ae18-3669c59dfd36"]},
-  {"id":"C03","question":"武汉理工大学有几个校区？分别叫什么？","ground_truth":"三个：马房山校区、余家头校区和南湖校区","category":"学校概况","difficulty":"easy","relevant_doc_ids":["doc_9a78cba7-14c0-435e-8823-d79f9ea9572c","doc_4dcd7c94-8c2f-4fdc-ae18-3669c59dfd36"]},
-  {"id":"C04","question":"南湖校区综合体育馆可以容纳多少人？","ground_truth":"可容纳6,000人","category":"学校概况","difficulty":"medium","relevant_doc_ids":["doc_9a78cba7-14c0-435e-8823-d79f9ea9572c","doc_4dcd7c94-8c2f-4fdc-ae18-3669c59dfd36"]},
-  {"id":"C05","question":"武理的材料科学与工程学科在教育部评估中拿了什么等级？","ground_truth":"A+等级，位列全国第一","category":"学校概况","difficulty":"medium","relevant_doc_ids":["doc_9a78cba7-14c0-435e-8823-d79f9ea9572c","doc_4dcd7c94-8c2f-4fdc-ae18-3669c59dfd36"]},
-  {"id":"C06","question":"学校的标志性建筑是什么？在哪个校区？","ground_truth":"飞马广场，位于马房山校区中心","category":"学校概况","difficulty":"easy","relevant_doc_ids":["doc_9a78cba7-14c0-435e-8823-d79f9ea9572c","doc_4dcd7c94-8c2f-4fdc-ae18-3669c59dfd36"]},
-  {"id":"C07","question":"武理有多少个学生社团？","ground_truth":"200余个","category":"学校概况","difficulty":"easy","relevant_doc_ids":["doc_9a78cba7-14c0-435e-8823-d79f9ea9572c","doc_4dcd7c94-8c2f-4fdc-ae18-3669c59dfd36"]},
-  {"id":"C08","question":"武理有多少个食堂？","ground_truth":"10余个","category":"学校概况","difficulty":"easy","relevant_doc_ids":["doc_9a78cba7-14c0-435e-8823-d79f9ea9572c","doc_4dcd7c94-8c2f-4fdc-ae18-3669c59dfd36"]},
-  {"id":"SE01","question":"软件工程的目标是什么？","ground_truth":"在按时、在预算内开发出无缺陷的软件，满足客户需求","category":"专业课程","difficulty":"medium","relevant_doc_ids":["doc_c252d16d-5290-4dd9-8df5-ce11a93f89bf"]},
-  {"id":"SE02","question":"软件工程师应始终维护谁的利益？","ground_truth":"公众","category":"专业课程","difficulty":"easy","relevant_doc_ids":["doc_c252d16d-5290-4dd9-8df5-ce11a93f89bf"]},
-  {"id":"SE03","question":"向软件项目中增加新程序员通常会产生什么影响？","ground_truth":"因需要培训和额外协调，生产速度通常会减慢","category":"专业课程","difficulty":"easy","relevant_doc_ids":["doc_c252d16d-5290-4dd9-8df5-ce11a93f89bf"]},
-  {"id":"SE04","question":"软件工程中，客户、开发者和用户可以是同一个人吗？","ground_truth":"不可以","category":"专业课程","difficulty":"easy","relevant_doc_ids":["doc_c252d16d-5290-4dd9-8df5-ce11a93f89bf"]},
-  {"id":"SE05","question":"根据软件工程的单选题，以下关于软件的陈述哪一项是正确的？A. 软件可以移植 B. 软件故障源于磨损 C. 软件是神秘事物 D. 软件是物理实体","ground_truth":"A. 软件可以移植","category":"专业课程","difficulty":"medium","relevant_doc_ids":["doc_c252d16d-5290-4dd9-8df5-ce11a93f89bf"]},
-  {"id":"DM01","question":"命题逻辑中，判断\"2+3=6\"是否是命题？","ground_truth":"是命题，是假命题","category":"专业课程","difficulty":"easy","relevant_doc_ids":["doc_295ada27-8dee-4462-9c89-327214584b9c"]},
-  {"id":"DM02","question":"离散结构中有多少份PDF的题目？","ground_truth":"6份","category":"专业课程","difficulty":"easy","relevant_doc_ids":["doc_295ada27-8dee-4462-9c89-327214584b9c"]},
-  {"id":"DM03","question":"甲、乙、丙、丁四人中有且仅有两人参加围棋比赛，四种判断全部正确，请问哪两人参加？","ground_truth":"甲和丙参加了围棋比赛","category":"专业课程","difficulty":"hard","relevant_doc_ids":["doc_295ada27-8dee-4462-9c89-327214584b9c"]},
-  {"id":"DM04","question":"联结词集合{↑, ↓}可由什么联结词表示？","ground_truth":"全功能的联结词，可通过三元联结词f表示","category":"专业课程","difficulty":"hard","relevant_doc_ids":["doc_295ada27-8dee-4462-9c89-327214584b9c"]},
-  {"id":"DM05","question":"什么是命题？","ground_truth":"命题是能判断真假的陈述句","category":"专业课程","difficulty":"medium","relevant_doc_ids":["doc_295ada27-8dee-4462-9c89-327214584b9c"]},
-  {"id":"CT01","question":"反转链表的时间复杂度和空间复杂度分别是多少？","ground_truth":"时间O(n)，空间O(1)","category":"面试刷题","difficulty":"easy","relevant_doc_ids":["doc_ac1f7d77-c592-4611-9512-3bc92fe7bae4"]},
-  {"id":"CT02","question":"LRU缓存机制应该用什么数据结构实现？","ground_truth":"哈希表 + 双向链表，或利用Map的插入顺序特性","category":"面试刷题","difficulty":"medium","relevant_doc_ids":["doc_ac1f7d77-c592-4611-9512-3bc92fe7bae4"]},
-  {"id":"CT03","question":"CodeTop60中链表章节共有多少道高频题？","ground_truth":"14道","category":"面试刷题","difficulty":"easy","relevant_doc_ids":["doc_ac1f7d77-c592-4611-9512-3bc92fe7bae4"]},
-  {"id":"CT04","question":"合并两个有序链表有哪些解法？","ground_truth":"迭代法（dummy节点，比较两链表）和递归法","category":"面试刷题","difficulty":"medium","relevant_doc_ids":["doc_ac1f7d77-c592-4611-9512-3bc92fe7bae4"]},
-  {"id":"CT05","question":"CodeTop60中涵盖了哪些数据结构的题目？","ground_truth":"链表、二叉树、数组/双指针/滑动窗口、二分查找、动态规划、回溯/搜索、字符串、排序/栈/其他","category":"面试刷题","difficulty":"medium","relevant_doc_ids":["doc_ac1f7d77-c592-4611-9512-3bc92fe7bae4"]},
-  {"id":"AG01","question":"智能体的定义是什么？包含哪些要素？","ground_truth":"智能体是能通过传感器感知环境，自主地通过执行器采取行动以达成目标的实体。要素：环境、传感器、执行器、自主性","category":"AI学习","difficulty":"easy","relevant_doc_ids":["doc_f0162488-a098-4e0d-98ae-d86ef42763fd"]},
-  {"id":"AG02","question":"Agent学习笔记中讲到了哪些传统智能体的演进阶段？","ground_truth":"简单反射 → 基于模型 → 基于目标 → 基于效用 → 学习型","category":"AI学习","difficulty":"easy","relevant_doc_ids":["doc_f0162488-a098-4e0d-98ae-d86ef42763fd"]},
-  {"id":"AG03","question":"简单反射型智能体的核心能力是什么？有什么典型例子？","ground_truth":"条件-动作规则，无记忆；典型例子是自动恒温器","category":"AI学习","difficulty":"medium","relevant_doc_ids":["doc_f0162488-a098-4e0d-98ae-d86ef42763fd"]},
-  {"id":"AG04","question":"基于目标的智能体能回答什么问题？","ground_truth":"做什么才能达到目标","category":"AI学习","difficulty":"medium","relevant_doc_ids":["doc_f0162488-a098-4e0d-98ae-d86ef42763fd"]},
-  {"id":"AG05","question":"基于模型的智能体和简单反射型智能体有什么区别？","ground_truth":"基于模型有内部世界模型和记忆能力，能回答'世界现在是什么样子'；简单反射只有条件-动作规则，无记忆","category":"AI学习","difficulty":"hard","relevant_doc_ids":["doc_f0162488-a098-4e0d-98ae-d86ef42763fd"]},
-  {"id":"XD01","question":"武汉理工大学的校训\"厚德博学、追求卓越\"中的\"追求卓越\"和校园文化中的\"卓越精神\"是什么关系？","ground_truth":"校训中的\"追求卓越\"是校园文化核心\"卓越精神\"的凝练表达，二者共同构成学校精神层面的核心标识","category":"学校概况","difficulty":"hard","relevant_doc_ids":["doc_9a78cba7-14c0-435e-8823-d79f9ea9572c","doc_4dcd7c94-8c2f-4fdc-ae18-3669c59dfd36"]},
-  {"id":"XD02","question":"反转链表的递归解法和离散数学中的递归定义有什么关系？","ground_truth":"反转链表的递归解法利用了递归结构，离散数学中递归定义是用自身来定义对象。二者共享自指的核心思想，是递归定义在编程中的具体应用","category":"专业课程","difficulty":"hard","relevant_doc_ids":["doc_ac1f7d77-c592-4611-9512-3bc92fe7bae4","doc_295ada27-8dee-4462-9c89-327214584b9c"]},
-  {"id":"XD03","question":"武汉理工大学有多少在校学生？其中本科生和研究生各多少？（资料中是否有分项数据？）","ground_truth":"约55,000余人（含本科生、硕士生、博士生及留学生）。文档没有分项数据","category":"学校概况","difficulty":"medium","relevant_doc_ids":["doc_9a78cba7-14c0-435e-8823-d79f9ea9572c","doc_4dcd7c94-8c2f-4fdc-ae18-3669c59dfd36"]},
-  {"id":"XD04","question":"武汉理工大学的材料科学入选了双一流建设学科，那它在CodeTop面试题中有涉及吗？","ground_truth":"没有。材料科学是武汉理工大学的学科，CodeTop是算法面试题库，两者无关","category":"学校概况","difficulty":"hard","relevant_doc_ids":["doc_9a78cba7-14c0-435e-8823-d79f9ea9572c","doc_4dcd7c94-8c2f-4fdc-ae18-3669c59dfd36","doc_ac1f7d77-c592-4611-9512-3bc92fe7bae4"]}
+  {
+    "id": "C01",
+    "question": "武汉理工大学的校训是什么？",
+    "ground_truth": "厚德博学、追求卓越",
+    "category": "学校概况",
+    "difficulty": "easy",
+    "relevant_doc_ids": [
+      "doc_a69b98e5119f694cb5cd5c73a1c56393",
+      "doc_4b956c30b8728c57c226d0b91276c731"
+    ]
+  },
+  {
+    "id": "C02",
+    "question": "武理是哪三所学校合并的？什么时候合并的？",
+    "ground_truth": "2000年5月27日，原武汉工业大学、原武汉交通科技大学和原武汉汽车工业大学三校合并组建",
+    "category": "学校概况",
+    "difficulty": "easy",
+    "relevant_doc_ids": [
+      "doc_a69b98e5119f694cb5cd5c73a1c56393",
+      "doc_4b956c30b8728c57c226d0b91276c731"
+    ]
+  },
+  {
+    "id": "C03",
+    "question": "武汉理工大学有几个校区？分别叫什么？",
+    "ground_truth": "三个：马房山校区、余家头校区和南湖校区",
+    "category": "学校概况",
+    "difficulty": "easy",
+    "relevant_doc_ids": [
+      "doc_a69b98e5119f694cb5cd5c73a1c56393",
+      "doc_4b956c30b8728c57c226d0b91276c731"
+    ]
+  },
+  {
+    "id": "C04",
+    "question": "南湖校区综合体育馆可以容纳多少人？",
+    "ground_truth": "可容纳6,000人",
+    "category": "学校概况",
+    "difficulty": "medium",
+    "relevant_doc_ids": [
+      "doc_a69b98e5119f694cb5cd5c73a1c56393",
+      "doc_4b956c30b8728c57c226d0b91276c731"
+    ]
+  },
+  {
+    "id": "C05",
+    "question": "武理的材料科学与工程学科在教育部评估中拿了什么等级？",
+    "ground_truth": "A+等级，位列全国第一",
+    "category": "学校概况",
+    "difficulty": "medium",
+    "relevant_doc_ids": [
+      "doc_a69b98e5119f694cb5cd5c73a1c56393",
+      "doc_4b956c30b8728c57c226d0b91276c731"
+    ]
+  },
+  {
+    "id": "C06",
+    "question": "学校的标志性建筑是什么？在哪个校区？",
+    "ground_truth": "飞马广场，位于马房山校区中心",
+    "category": "学校概况",
+    "difficulty": "easy",
+    "relevant_doc_ids": [
+      "doc_a69b98e5119f694cb5cd5c73a1c56393",
+      "doc_4b956c30b8728c57c226d0b91276c731"
+    ]
+  },
+  {
+    "id": "C07",
+    "question": "武理有多少个学生社团？",
+    "ground_truth": "200余个",
+    "category": "学校概况",
+    "difficulty": "easy",
+    "relevant_doc_ids": [
+      "doc_a69b98e5119f694cb5cd5c73a1c56393",
+      "doc_4b956c30b8728c57c226d0b91276c731"
+    ]
+  },
+  {
+    "id": "C08",
+    "question": "武理有多少个食堂？",
+    "ground_truth": "10余个",
+    "category": "学校概况",
+    "difficulty": "easy",
+    "relevant_doc_ids": [
+      "doc_a69b98e5119f694cb5cd5c73a1c56393",
+      "doc_4b956c30b8728c57c226d0b91276c731"
+    ]
+  },
+  {
+    "id": "SE01",
+    "question": "软件工程的目标是什么？",
+    "ground_truth": "在按时、在预算内开发出无缺陷的软件，满足客户需求",
+    "category": "专业课程",
+    "difficulty": "medium",
+    "relevant_doc_ids": [
+      "doc_0229975145df745e4e35eba9e1071a0a"
+    ]
+  },
+  {
+    "id": "SE02",
+    "question": "软件工程师应始终维护谁的利益？",
+    "ground_truth": "公众",
+    "category": "专业课程",
+    "difficulty": "easy",
+    "relevant_doc_ids": [
+      "doc_0229975145df745e4e35eba9e1071a0a"
+    ]
+  },
+  {
+    "id": "SE03",
+    "question": "向软件项目中增加新程序员通常会产生什么影响？",
+    "ground_truth": "因需要培训和额外协调，生产速度通常会减慢",
+    "category": "专业课程",
+    "difficulty": "easy",
+    "relevant_doc_ids": [
+      "doc_0229975145df745e4e35eba9e1071a0a"
+    ]
+  },
+  {
+    "id": "SE04",
+    "question": "软件工程中，客户、开发者和用户可以是同一个人吗？",
+    "ground_truth": "不可以",
+    "category": "专业课程",
+    "difficulty": "easy",
+    "relevant_doc_ids": [
+      "doc_0229975145df745e4e35eba9e1071a0a"
+    ]
+  },
+  {
+    "id": "SE05",
+    "question": "根据软件工程的单选题，以下关于软件的陈述哪一项是正确的？A. 软件可以移植 B. 软件故障源于磨损 C. 软件是神秘事物 D. 软件是物理实体",
+    "ground_truth": "A. 软件可以移植",
+    "category": "专业课程",
+    "difficulty": "medium",
+    "relevant_doc_ids": [
+      "doc_0229975145df745e4e35eba9e1071a0a"
+    ]
+  },
+  {
+    "id": "DM01",
+    "question": "命题逻辑中，判断\"2+3=6\"是否是命题？",
+    "ground_truth": "是命题，是假命题",
+    "category": "专业课程",
+    "difficulty": "easy",
+    "relevant_doc_ids": [
+      "doc_354e9ec7cc056e450c2cf4f7c71223a1"
+    ]
+  },
+  {
+    "id": "DM02",
+    "question": "离散结构中有多少份PDF的题目？",
+    "ground_truth": "6份",
+    "category": "专业课程",
+    "difficulty": "easy",
+    "relevant_doc_ids": [
+      "doc_354e9ec7cc056e450c2cf4f7c71223a1"
+    ]
+  },
+  {
+    "id": "DM03",
+    "question": "甲、乙、丙、丁四人中有且仅有两人参加围棋比赛，四种判断全部正确，请问哪两人参加？",
+    "ground_truth": "甲和丙参加了围棋比赛",
+    "category": "专业课程",
+    "difficulty": "hard",
+    "relevant_doc_ids": [
+      "doc_354e9ec7cc056e450c2cf4f7c71223a1"
+    ]
+  },
+  {
+    "id": "DM04",
+    "question": "联结词集合{↑, ↓}可由什么联结词表示？",
+    "ground_truth": "全功能的联结词，可通过三元联结词f表示",
+    "category": "专业课程",
+    "difficulty": "hard",
+    "relevant_doc_ids": [
+      "doc_354e9ec7cc056e450c2cf4f7c71223a1"
+    ]
+  },
+  {
+    "id": "DM05",
+    "question": "什么是命题？",
+    "ground_truth": "命题是能判断真假的陈述句",
+    "category": "专业课程",
+    "difficulty": "medium",
+    "relevant_doc_ids": [
+      "doc_354e9ec7cc056e450c2cf4f7c71223a1"
+    ]
+  },
+  {
+    "id": "CT01",
+    "question": "反转链表的时间复杂度和空间复杂度分别是多少？",
+    "ground_truth": "时间O(n)，空间O(1)",
+    "category": "面试刷题",
+    "difficulty": "easy",
+    "relevant_doc_ids": [
+      "doc_fb78f4c97e1be296c218a98c3cc2632a"
+    ]
+  },
+  {
+    "id": "CT02",
+    "question": "LRU缓存机制应该用什么数据结构实现？",
+    "ground_truth": "哈希表 + 双向链表，或利用Map的插入顺序特性",
+    "category": "面试刷题",
+    "difficulty": "medium",
+    "relevant_doc_ids": [
+      "doc_fb78f4c97e1be296c218a98c3cc2632a"
+    ]
+  },
+  {
+    "id": "CT03",
+    "question": "CodeTop60中链表章节共有多少道高频题？",
+    "ground_truth": "14道",
+    "category": "面试刷题",
+    "difficulty": "easy",
+    "relevant_doc_ids": [
+      "doc_fb78f4c97e1be296c218a98c3cc2632a"
+    ]
+  },
+  {
+    "id": "CT04",
+    "question": "合并两个有序链表有哪些解法？",
+    "ground_truth": "迭代法（dummy节点，比较两链表）和递归法",
+    "category": "面试刷题",
+    "difficulty": "medium",
+    "relevant_doc_ids": [
+      "doc_fb78f4c97e1be296c218a98c3cc2632a"
+    ]
+  },
+  {
+    "id": "CT05",
+    "question": "CodeTop60中涵盖了哪些数据结构的题目？",
+    "ground_truth": "链表、二叉树、数组/双指针/滑动窗口、二分查找、动态规划、回溯/搜索、字符串、排序/栈/其他",
+    "category": "面试刷题",
+    "difficulty": "medium",
+    "relevant_doc_ids": [
+      "doc_fb78f4c97e1be296c218a98c3cc2632a"
+    ]
+  },
+  {
+    "id": "AG01",
+    "question": "智能体的定义是什么？包含哪些要素？",
+    "ground_truth": "智能体是能通过传感器感知环境，自主地通过执行器采取行动以达成目标的实体。要素：环境、传感器、执行器、自主性",
+    "category": "AI学习",
+    "difficulty": "easy",
+    "relevant_doc_ids": [
+      "doc_62e0558004ecae21959909f0061ea8c2"
+    ]
+  },
+  {
+    "id": "AG02",
+    "question": "Agent学习笔记中讲到了哪些传统智能体的演进阶段？",
+    "ground_truth": "简单反射 → 基于模型 → 基于目标 → 基于效用 → 学习型",
+    "category": "AI学习",
+    "difficulty": "easy",
+    "relevant_doc_ids": [
+      "doc_62e0558004ecae21959909f0061ea8c2"
+    ]
+  },
+  {
+    "id": "AG03",
+    "question": "简单反射型智能体的核心能力是什么？有什么典型例子？",
+    "ground_truth": "条件-动作规则，无记忆；典型例子是自动恒温器",
+    "category": "AI学习",
+    "difficulty": "medium",
+    "relevant_doc_ids": [
+      "doc_62e0558004ecae21959909f0061ea8c2"
+    ]
+  },
+  {
+    "id": "AG04",
+    "question": "基于目标的智能体能回答什么问题？",
+    "ground_truth": "做什么才能达到目标",
+    "category": "AI学习",
+    "difficulty": "medium",
+    "relevant_doc_ids": [
+      "doc_62e0558004ecae21959909f0061ea8c2"
+    ]
+  },
+  {
+    "id": "AG05",
+    "question": "基于模型的智能体和简单反射型智能体有什么区别？",
+    "ground_truth": "基于模型有内部世界模型和记忆能力，能回答'世界现在是什么样子'；简单反射只有条件-动作规则，无记忆",
+    "category": "AI学习",
+    "difficulty": "hard",
+    "relevant_doc_ids": [
+      "doc_62e0558004ecae21959909f0061ea8c2"
+    ]
+  },
+  {
+    "id": "XD01",
+    "question": "武汉理工大学的校训\"厚德博学、追求卓越\"中的\"追求卓越\"和校园文化中的\"卓越精神\"是什么关系？",
+    "ground_truth": "校训中的\"追求卓越\"是校园文化核心\"卓越精神\"的凝练表达，二者共同构成学校精神层面的核心标识",
+    "category": "学校概况",
+    "difficulty": "hard",
+    "relevant_doc_ids": [
+      "doc_a69b98e5119f694cb5cd5c73a1c56393",
+      "doc_4b956c30b8728c57c226d0b91276c731"
+    ]
+  },
+  {
+    "id": "XD02",
+    "question": "反转链表的递归解法和离散数学中的递归定义有什么关系？",
+    "ground_truth": "反转链表的递归解法利用了递归结构，离散数学中递归定义是用自身来定义对象。二者共享自指的核心思想，是递归定义在编程中的具体应用",
+    "category": "专业课程",
+    "difficulty": "hard",
+    "relevant_doc_ids": [
+      "doc_fb78f4c97e1be296c218a98c3cc2632a",
+      "doc_354e9ec7cc056e450c2cf4f7c71223a1"
+    ]
+  },
+  {
+    "id": "XD03",
+    "question": "武汉理工大学有多少在校学生？其中本科生和研究生各多少？（资料中是否有分项数据？）",
+    "ground_truth": "约55,000余人（含本科生、硕士生、博士生及留学生）。文档没有分项数据",
+    "category": "学校概况",
+    "difficulty": "medium",
+    "relevant_doc_ids": [
+      "doc_a69b98e5119f694cb5cd5c73a1c56393",
+      "doc_4b956c30b8728c57c226d0b91276c731"
+    ]
+  },
+  {
+    "id": "XD04",
+    "question": "武汉理工大学的材料科学入选了双一流建设学科，那它在CodeTop面试题中有涉及吗？",
+    "ground_truth": "没有。材料科学是武汉理工大学的学科，CodeTop是算法面试题库，两者无关",
+    "category": "学校概况",
+    "difficulty": "hard",
+    "relevant_doc_ids": [
+      "doc_a69b98e5119f694cb5cd5c73a1c56393",
+      "doc_4b956c30b8728c57c226d0b91276c731",
+      "doc_fb78f4c97e1be296c218a98c3cc2632a"
+    ]
+  }
 ]

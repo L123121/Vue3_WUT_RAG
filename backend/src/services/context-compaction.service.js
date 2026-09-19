@@ -3,6 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 const config = require("../config");
+const { logEvent } = require('./observability.service');
 
 /**
  * ContextCompactionService — Agent 上下文压缩分层（借鉴 AgentHarness 四层压缩中的两层）
@@ -65,7 +66,7 @@ async function spillToolResult(name, content, meta = {}) {
       written = true;
       pruneSpillDir(spillDir).catch(() => {});
     } catch (err) {
-      console.warn(`[Compaction] 工具结果落盘失败，降级为截断: ${err.message}`);
+      logEvent('warn', 'compaction_tool_result_persist_failed', { error: err.message });
     }
   }
 

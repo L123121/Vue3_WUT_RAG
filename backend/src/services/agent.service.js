@@ -6,6 +6,7 @@ const { AiService } = require("./ai.service");
 const { executeToolDetailed, getToolSchemas, getToolNames } = require("./agent-tools");
 const { spillToolResult, compactHistoricalToolResults } = require("./context-compaction.service");
 const config = require("../config");
+const { logEvent } = require('./observability.service');
 
 /**
  * AgentService — 轻量 Agent 工具调度层（V2.0，面试官反馈②）
@@ -178,7 +179,7 @@ function parseToolArgs(rawArgs) {
     const parsed = JSON.parse(rawArgs);
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch (err) {
-    console.warn("[Agent] tool_call arguments 解析失败，降级为空参数:", err.message);
+    logEvent('warn', 'agent_tool_args_parse_failed', { error: err.message });
     return {};
   }
 }
@@ -234,7 +235,7 @@ class AgentService {
     ]);
     clearTimeout(timer);
     if (response._timeout) {
-      console.warn(`[Agent] 工具决策超时(${decideTimeoutMs}ms)，直接回答`);
+      logEvent('warn', 'agent_decide_timeout', { timeoutMs: decideTimeoutMs });
       return { toolCalls: null, content: "", reason: "决策超时，直接回答" };
     }
     if (!response.toolCalls || response.toolCalls.length === 0) {
@@ -247,9 +248,9 @@ class AgentService {
    * ② 确定性执行工具（结构化返回 { ok, content, data }）
    */
   async runTool(name, args, context = {}) {
-    console.log(`[Agent] 执行工具: ${name}, 参数: ${JSON.stringify(args)}`);
+    logEvent('info', 'agent_tool_execute_start', { tool: name, args });
     const result = await executeToolDetailed(name, args, context);
-    console.log(`[Agent] 工具 ${name} ${result.ok ? "成功" : "失败"}: ${String(result.content).substring(0, 300)}`);
+    logEvent('info', 'agent_tool_execute_result', { tool: name, ok: result.ok, content: String(result.content).substring(0, 300) });
     return result;
   }
 
@@ -310,7 +311,7 @@ class AgentService {
           }
         }
       } catch (err) {
-        console.warn(`[Agent] 第 ${round + 1} 轮决策失败:`, err.message);
+        logEvent('warn', 'agent_round_decide_failed', { round: round + 1, error: err.message });
         trace.finishReason = "error";
         trace.totalMs = Date.now() - totalStart;
         persistTrace(trace);
@@ -336,7 +337,7 @@ class AgentService {
         persistTrace(trace);
         yield { type: "trace", trace };
         yield { type: "content", content: "", done: true };
-        console.log(`[Agent] 完成（直接回答，第 ${round + 1} 轮），总耗时 ${Date.now() - totalStart}ms`);
+        logEvent('info', 'agent_done_direct_answer', { round: round + 1, totalMs: Date.now() - totalStart });
         return;
       }
 
@@ -437,7 +438,7 @@ class AgentService {
       if (signature === lastSignature) {
         repeatCount++;
         if (repeatCount >= 2) {
-          console.warn(`[Agent] 检测到无进展循环（${signature}），强制收尾`);
+          logEvent('warn', 'agent_no_progress_forced_finish', { signature });
           trace.finishReason = "no_progress";
           messages = [
             ...messages,
@@ -466,7 +467,7 @@ class AgentService {
       for await (const chunk of this.aiService.getCompletionStream("", [], { messages, tools: finalTools, signal: options.signal })) {
         if (chunk.done) {
           trace.totalMs = Date.now() - totalStart;
-          console.log(`[Agent] 完成，工具=${toolSummary.join(";")}, 总耗时 ${trace.totalMs}ms`);
+          logEvent('info', 'agent_done', { tools: toolSummary.join(";"), totalMs: trace.totalMs });
           persistTrace(trace);
           // token 用量随收尾下发（与 rag.service.chatStream 一致，前端逐条消息展示成本）
           if (chunk.usage) yield { type: "usage", usage: chunk.usage };
@@ -480,7 +481,7 @@ class AgentService {
         }
       }
     } catch (err) {
-      console.warn(`[Agent] 收尾生成失败:`, err.message);
+      logEvent('warn', 'agent_final_answer_failed', { error: err.message });
       trace.finishReason = "error";
       trace.totalMs = Date.now() - totalStart;
       persistTrace(trace);

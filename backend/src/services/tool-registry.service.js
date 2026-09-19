@@ -7,6 +7,8 @@
  * 工具来源 (source): builtin | custom
  */
 
+const { logEvent } = require('./observability.service');
+
 const TOOL_SOURCES = {
   BUILTIN: 'builtin',
   CUSTOM: 'custom',
@@ -108,7 +110,7 @@ function withTimeout(promise, timeoutMs, signal = null, onTimeout = null) {
   promise
     .then(
       () => { /* 超时后成功完成，结果被丢弃 */ },
-      (e) => { console.warn('[ToolRegistry] 超时后 handler 最终失败:', e?.message || e); }
+      (e) => { logEvent('warn', 'tool_registry_timeout_handler_failed', { error: e?.message || e }); }
     )
     .catch(() => { /* then 内已处理，这里仅防 then 抛错 */ });
   return raced;
@@ -270,7 +272,7 @@ class ToolRegistry {
       return { ok: true, content: String(raw), uiSummary: null, data: null, errorCode: null };
     } catch (err) {
       if (timedOut || err instanceof ToolTimeoutError) {
-        console.warn(`[ToolRegistry] 工具 ${name} 执行超时（${timeoutMs}ms），返回超时提示`);
+        logEvent('warn', 'tool_registry_timeout', { tool: name, timeoutMs });
         return { ok: false, content: `工具 ${name} 执行超时（${timeoutMs}ms）。请基于已有信息继续回答，或换一种方式获取数据。`, data: null };
       }
       if (err.name === 'AbortError' || context.signal?.aborted) throw err;

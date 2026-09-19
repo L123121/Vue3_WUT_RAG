@@ -4,6 +4,7 @@ const { applicationContainer } = require("../bootstrap/container");
 const { recordAudit } = require('../services/quality-governance.service');
 // SSE 事件→线上格式映射的唯一实现在 utils/sse-events.js（与 rag.controller 共享）
 const { writeSse, writeStreamEvent } = require('../utils/sse-events');
+const { logEvent } = require('../services/observability.service');
 
 function createChatHandlers(conversationOrchestrator) {
   const streamHandler = async (req, res, next) => {
@@ -54,13 +55,13 @@ function createChatHandlers(conversationOrchestrator) {
         traceId: audit.traceId,
         userId: req.userId,
         route: audit.sources.length ? 'rag-stream' : 'chat-stream',
-      }).catch((error) => console.warn('[QualityAudit] 流式记录失败:', error.message));
+      }).catch((error) => logEvent('warn', 'quality_audit_record_failed', { scope: 'chat_stream', error: error.message }));
       cleanupClientClose();
       res.end();
     } catch (error) {
       cleanupClientClose();
       if (abortController?.signal.aborted) return;
-      console.error("[Chat Stream] 错误:", error);
+      logEvent('error', 'chat_stream_error', { error: error.message, stack: error.stack });
       if (!res.headersSent) return next(error);
       try {
         writeSse(res, { error: error.message });

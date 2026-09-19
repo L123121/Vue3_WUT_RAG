@@ -1,14 +1,15 @@
 // config.js
 require('dotenv').config();
 const path = require('path');
+const { logEvent } = require('../services/observability.service');
 const aiBaseUrl = process.env.AI_BASE_URL || 'https://api.stepfun.com/v1';
 
 if (!process.env.VITEST) {
   const requiredEnv = ['AI_API_KEY', 'JWT_SECRET'];
   const missing = requiredEnv.filter(key => !process.env[key]);
   if (missing.length > 0) {
-    console.error(`[Config] 缺少必要环境变量: ${missing.join(', ')}`);
-    console.error('[Config] 请检查 backend/.env 文件配置');
+    logEvent('error', 'config_missing_env', { missing: missing.join(', ') });
+    logEvent('error', 'config_missing_env_hint', { message: '请检查 backend/.env 文件配置' });
     process.exit(1);
   }
 }
@@ -81,6 +82,14 @@ module.exports = {
     cacheDir: process.env.EMBEDDING_CACHE_DIR || path.resolve(__dirname, '../../../.model-cache'),
     localFilesOnly: process.env.EMBEDDING_LOCAL_FILES_ONLY !== 'false',
     sparseDim: parseInt(process.env.EMBEDDING_SPARSE_DIM, 10) || 250002,
+    // 单次送入 ONNX 的批大小：逐条推理会重复摊模型固定开销，真实批量可提升索引吞吐数倍
+    batchSize: parseInt(process.env.EMBEDDING_BATCH_SIZE, 10) || 16,
+    // BGE-zh v1.5 是 s2p 非对称检索模型：查询侧需加指令前缀、文档侧不加。
+    // 置 false 可让查询与文档走同一编码路径，用于 A/B 对比前缀收益（索引无需重建）
+    queryInstructionEnabled: process.env.EMBEDDING_QUERY_INSTRUCTION !== 'false',
+    // 稀疏通道 BM25（idf + 长度归一化）。打开后文档侧权重会变，必须全量重索引；
+    // 语料统计缺失时两侧一致退回纯 tf，不会出现单侧带 idf 的错配
+    sparseIdfEnabled: process.env.EMBEDDING_SPARSE_IDF !== 'false',
   },
   // JWT 配置（必须通过环境变量设置，禁止硬编码默认值）
   jwt: {
@@ -254,19 +263,19 @@ module.exports = {
     try {
       const persisted = fs.existsSync(credFile) ? fs.readFileSync(credFile, 'utf8').trim() : '';
       if (persisted) {
-        console.warn('[Config] 未设置 ADMIN_PASSWORD，复用已生成的管理员密码文件:', credFile);
+        logEvent('warn', 'config_admin_password_reused_file', { message: '未设置 ADMIN_PASSWORD，复用已生成的管理员密码文件', credFile });
         return { username, password: persisted };
       }
       const generated = require('crypto').randomBytes(12).toString('base64url');
       fs.mkdirSync(path.dirname(credFile), { recursive: true });
       fs.writeFileSync(credFile, generated, { mode: 0o600 });
-      console.warn('[Config] 未设置 ADMIN_PASSWORD，已生成随机管理员密码并写入文件（不打印明文）:', credFile);
-      console.warn('[Config] 请尽快在 .env 中设置 ADMIN_PASSWORD 以固定管理员密码');
+      logEvent('warn', 'config_admin_password_generated', { message: '未设置 ADMIN_PASSWORD，已生成随机管理员密码并写入文件（不打印明文）', credFile });
+      logEvent('warn', 'config_admin_password_hint', { message: '请尽快在 .env 中设置 ADMIN_PASSWORD 以固定管理员密码' });
       return { username, password: generated };
     } catch (err) {
       // 落盘失败（只读文件系统等）：fail-closed，不生成无人知晓的密码，也不打印明文
-      console.error('[Config] 管理员密码文件读写失败:', err.message);
-      console.error('[Config] 请通过环境变量 ADMIN_PASSWORD 显式指定管理员密码');
+      logEvent('error', 'config_admin_password_file_error', { message: '管理员密码文件读写失败', error: err.message });
+      logEvent('error', 'config_admin_password_env_hint', { message: '请通过环境变量 ADMIN_PASSWORD 显式指定管理员密码' });
       return { username, password: '' };
     }
   })(),

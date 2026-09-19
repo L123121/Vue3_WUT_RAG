@@ -1,11 +1,14 @@
 "use strict";
 
+const { logEvent } = require('./observability.service');
+
 const crypto = require('crypto');
 const { redis: store } = require('./memory-store');
 const config = require('../config');
 const { sanitizeDocument } = require('./doc-sanitizer.service');
 const { cleanHeaderFooter } = require('./header-footer-cleaner.service');
 const { normalizeCharacters, mergeHardLineBreaks } = require('./text-normalizer.service');
+const { deriveDocId } = require('../utils/doc-id');
 
 const VECTOR_STATUS = Object.freeze({
   LOCAL_ONLY: 'local_only',
@@ -89,7 +92,7 @@ class DocumentService {
     if (normalizeEnabled) {
       const norm = normalizeCharacters(content);
       if (norm.report.totalReplaced > 0) {
-        console.log(`[Document] 字符级去脏: ${norm.report.totalReplaced} 处（乱码 ${norm.report.garbageReplaced + norm.report.mojibakeReplaced}）`);
+        logEvent('info', 'document_sanitize_normalized', { replaced: norm.report.totalReplaced, garbage: norm.report.garbageReplaced + norm.report.mojibakeReplaced });
         normalizeReport = {
           fullwidth: norm.report.fullwidth,
           whitespace: norm.report.whitespace,
@@ -111,10 +114,10 @@ class DocumentService {
       );
     }
     if (report.injectionLines > 0) {
-      console.warn(`[Document] 已过滤 ${report.injectionLines} 行疑似提示词注入: ${JSON.stringify(report.injectionHits.slice(0, 5))}`);
+      logEvent('warn', 'document_injection_filtered', { lines: report.injectionLines, hits: report.injectionHits.slice(0, 5) });
     }
     if (report.qualityLevel === 'warn') {
-      console.warn(`[Document] 文档乱码占比偏高: ${(report.garbageRatio * 100).toFixed(2)}%（已入库，建议人工复核）`);
+      logEvent('warn', 'document_garbage_ratio_high', { ratioPercent: (report.garbageRatio * 100).toFixed(2), message: '文档乱码占比偏高（已入库，建议人工复核）' });
     }
     if (report.injectionLines > 0 || report.garbageRatio > 0) {
       metadata = { ...metadata, sanitizeReport: { injectionLines: report.injectionLines, garbageRatio: report.garbageRatio, qualityLevel: report.qualityLevel } };
@@ -129,10 +132,11 @@ class DocumentService {
     if (cleanEnabled) {
       const cleaned = cleanHeaderFooter(content);
       if (cleaned.report.removedRuleLines + cleaned.report.removedPositionLines > 0) {
-        console.log(
-          `[Document] 页眉页脚清洗: 规则法 ${cleaned.report.removedRuleLines} 行, ` +
-          `位置法 ${cleaned.report.removedPositionLines} 行 (${cleaned.report.pages} 页)`,
-        );
+        logEvent('info', 'document_header_footer_cleaned', {
+          removedRuleLines: cleaned.report.removedRuleLines,
+          removedPositionLines: cleaned.report.removedPositionLines,
+          pages: cleaned.report.pages,
+        });
         metadata = {
           ...metadata,
           cleanReport: {
@@ -151,7 +155,7 @@ class DocumentService {
     if (normalizeEnabled) {
       const merged = mergeHardLineBreaks(content);
       if (merged.report.merged > 0) {
-        console.log(`[Document] 断行合并: ${merged.report.merged} 处`);
+        logEvent('info', 'document_lines_merged', { merged: merged.report.merged });
         // merge 步骤本身可能产生第一份 normalizeReport（无可替换字符但有断行），
         // 赋值后必然非空，直接落库
         normalizeReport = { ...normalizeReport, mergedLines: merged.report.merged };
@@ -166,7 +170,7 @@ class DocumentService {
     if (dedupEnabled) {
       const duplicate = await this._findDuplicate(contentHash);
       if (duplicate) {
-        console.log(`[Document] 内容重复: 已存在 ${duplicate.id} (${duplicate.title})，跳过重复入库`);
+        logEvent('info', 'document_duplicate_skipped', { id: duplicate.id, title: duplicate.title });
         return {
           id: duplicate.id,
           title: duplicate.title,
@@ -181,7 +185,9 @@ class DocumentService {
       }
     }
 
-    const docId = `doc_${crypto.randomUUID()}`;
+    // 确定性 docId：由 (标题, 类别) 派生，同一文档重新入库得到同一 ID，
+    // 评测数据集里硬编码的 relevant_doc_ids 才有可复现的可能（见 utils/doc-id.js）
+    const docId = deriveDocId(title, category);
     const now = Date.now();
 
     const docMetadata = {
@@ -206,6 +212,15 @@ class DocumentService {
       await this.store.sadd(this._hashKey(contentHash), docId);
     }
 
+    // 覆盖语义：同一 (标题, 类别) 会派生出同一 docId，重建前必须清掉旧向量，
+    // 否则内容变短时旧的 `docId_sent_N` 会残留并继续被检索命中。
+    // 清理失败只告警不阻塞索引（首个入库场景本就没有旧点）。
+    try {
+      await this.indexingService.removeDocument(docId);
+    } catch (err) {
+      logEvent('warn', 'document_stale_vectors_cleanup_failed', { docId, error: err.message });
+    }
+
     const indexPromise = this.indexingService.indexDocument(docId, title, content, category)
       .then(async indexedChunkCount => {
         if (!Number.isFinite(indexedChunkCount) || indexedChunkCount <= 0) {
@@ -220,7 +235,7 @@ class DocumentService {
           indexedChunkCount,
           chunkCount: indexedChunkCount,
         });
-        console.log(`[Document] 向量索引完成: ${docId}, ${indexedChunkCount} 切片`);
+        logEvent('info', 'document_vector_index_done', { docId, chunks: indexedChunkCount });
         return {
           vectorStatus: VECTOR_STATUS.READY,
           vectorMessage,
@@ -234,7 +249,7 @@ class DocumentService {
           vectorMessage,
           vectorUpdatedAt: Date.now(),
         });
-        console.error(`[Document] 向量索引失败: ${docId}`, vectorMessage);
+        logEvent('error', 'document_vector_index_failed', { docId, message: vectorMessage });
         return {
           vectorStatus: VECTOR_STATUS.FAILED,
           vectorMessage,
@@ -280,7 +295,7 @@ class DocumentService {
         if (meta && meta.id) return meta;
       }
     } catch (err) {
-      console.warn(`[Document] 去重检查失败(忽略): ${err.message}`);
+      logEvent('warn', 'document_dedup_check_failed_ignored', { error: err.message });
     }
     return null;
   }
@@ -293,7 +308,7 @@ class DocumentService {
 
     // 异步删除向量索引（不阻塞响应）
     this.indexingService.removeDocument(docId).catch(err => {
-      console.warn(`[Document] 向量索引删除失败: ${docId}`, err.message);
+      logEvent('warn', 'document_vector_index_delete_failed', { docId, error: err.message });
     });
 
     // 清理内容哈希索引，避免删除后同内容文档被误判为重复

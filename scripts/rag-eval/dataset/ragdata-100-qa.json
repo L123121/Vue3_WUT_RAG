@@ -5,7 +5,7 @@
     "ground_truth": "2002年",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_d5c182ff-6ed7-46a8-9a59-bafab99e1940"
+      "doc_3e93a9b8cd50efb11b125b5872eaab42"
     ],
     "difficulty": "easy"
   },
@@ -15,7 +15,7 @@
     "ground_truth": "具备扎实的数学、自然科学、计算机软件与信息技术、与工作岗位相关的法律和工程管理等方面的知识、良好的科学素养以及优秀的工程实践能力",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_d5c182ff-6ed7-46a8-9a59-bafab99e1940"
+      "doc_3e93a9b8cd50efb11b125b5872eaab42"
     ],
     "difficulty": "medium"
   },
@@ -25,7 +25,7 @@
     "ground_truth": "能够基于科学原理并采用科学方法对软件工程领域复杂工程问题进行研究，包括设计实验、分析与解释数据、并通过信息综合得到合理有效的结论。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_d5c182ff-6ed7-46a8-9a59-bafab99e1940"
+      "doc_3e93a9b8cd50efb11b125b5872eaab42"
     ],
     "difficulty": "medium"
   },
@@ -35,7 +35,7 @@
     "ground_truth": "Have the ability of self-learning and awareness of lifelong learning in the professional work and social environment, keep up with the development trend of computer software and information technology, have the courage to innovate, be able to use the latest technical means and tools to solve the technical problems encountered in complex engineering problems, and maintain the professional competitiveness;",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_d5c182ff-6ed7-46a8-9a59-bafab99e1940"
+      "doc_3e93a9b8cd50efb11b125b5872eaab42"
     ],
     "difficulty": "medium"
   },
@@ -45,7 +45,7 @@
     "ground_truth": "健康与安全、全生命周期成本与净零碳要求、法律与伦理、社会与文化",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_d5c182ff-6ed7-46a8-9a59-bafab99e1940"
+      "doc_3e93a9b8cd50efb11b125b5872eaab42"
     ],
     "difficulty": "medium"
   },
@@ -55,7 +55,7 @@
     "ground_truth": "具有自主学习和终身学习的意识和能力，能够理解广泛的技术变革对工程和社会的影响，适应新技术变革，具有批判性思维能力",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_d5c182ff-6ed7-46a8-9a59-bafab99e1940"
+      "doc_3e93a9b8cd50efb11b125b5872eaab42"
     ],
     "difficulty": "medium"
   },
@@ -65,7 +65,7 @@
     "ground_truth": "H、M、L 分别表示该课程对指标点的支撑强度为高、中、低。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_d5c182ff-6ed7-46a8-9a59-bafab99e1940"
+      "doc_3e93a9b8cd50efb11b125b5872eaab42"
     ],
     "difficulty": "easy"
   },
@@ -75,7 +75,7 @@
     "ground_truth": "软件设计与体系结构 B、编译原理、离散结构、操作系统、软件质量保证与测试 B、软件工程基础。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_d5c182ff-6ed7-46a8-9a59-bafab99e1940"
+      "doc_3e93a9b8cd50efb11b125b5872eaab42"
     ],
     "difficulty": "medium"
   },
@@ -85,7 +85,7 @@
     "ground_truth": "数据库原理与应用、计算机网络、计算机网络基础(GX)、计算机网络 G",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_d5c182ff-6ed7-46a8-9a59-bafab99e1940"
+      "doc_3e93a9b8cd50efb11b125b5872eaab42"
     ],
     "difficulty": "medium"
   },
@@ -95,7 +95,7 @@
     "ground_truth": "22.54960004960",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_d5c182ff-6ed7-46a8-9a59-bafab99e1940"
+      "doc_3e93a9b8cd50efb11b125b5872eaab42"
     ],
     "difficulty": "medium"
   },
@@ -105,7 +105,7 @@
     "ground_truth": "模拟人类习惯的解题方法，将问题分解为对象，通过对象之间的消息传递完成功能。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_118b3b16-953d-419c-a174-6e23fe87a8de"
+      "doc_68454fa200f30851992cd4a6f9616125"
     ],
     "difficulty": "easy"
   },
@@ -115,7 +115,7 @@
     "ground_truth": "①用一个对象初始化同类的另一个新对象；②函数的形参是类的对象且为值传递时；③函数的返回值是类的对象。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_118b3b16-953d-419c-a174-6e23fe87a8de"
+      "doc_68454fa200f30851992cd4a6f9616125"
     ],
     "difficulty": "medium"
   },
@@ -125,7 +125,7 @@
     "ground_truth": "友元不是类的成员函数；可访问类的所有成员（包括私有）；破坏了封装性和隐藏性；不具有交换性；不具有传递性；不可继承。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_118b3b16-953d-419c-a174-6e23fe87a8de"
+      "doc_68454fa200f30851992cd4a6f9616125"
     ],
     "difficulty": "easy"
   },
@@ -135,7 +135,7 @@
     "ground_truth": "构造顺序：先调用基类构造函数（按继承顺序），再调用成员对象的构造函数（按声明顺序），最后执行派生类构造函数体；析构顺序与构造完全相反。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_118b3b16-953d-419c-a174-6e23fe87a8de"
+      "doc_68454fa200f30851992cd4a6f9616125"
     ],
     "difficulty": "medium"
   },
@@ -145,7 +145,7 @@
     "ground_truth": "非虚继承时输出10，原因是D类包含两份独立的n（B::n和C::n），B::n和C::n互不影响，getn()返回B::n；虚继承时输出20，原因是D类只有一份n，最后对C::n赋值的20会覆盖之前B::n的10。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_118b3b16-953d-419c-a174-6e23fe87a8de"
+      "doc_68454fa200f30851992cd4a6f9616125"
     ],
     "difficulty": "easy"
   },
@@ -155,7 +155,7 @@
     "ground_truth": "三个必要条件为：1. 存在公有派生类层次关系；2. 基类中声明了虚函数；3. 通过基类指针或引用调用虚函数。基类析构函数声明为虚函数是为了防止内存泄漏，若基类析构非虚，通过基类指针删除派生类对象时只会调用基类析构函数，无法释放派生类申请的堆内存。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_118b3b16-953d-419c-a174-6e23fe87a8de"
+      "doc_68454fa200f30851992cd4a6f9616125"
     ],
     "difficulty": "medium"
   },
@@ -165,7 +165,7 @@
     "ground_truth": "分别被实例化为char*和double*",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_118b3b16-953d-419c-a174-6e23fe87a8de"
+      "doc_68454fa200f30851992cd4a6f9616125"
     ],
     "difficulty": "easy"
   },
@@ -175,7 +175,7 @@
     "ground_truth": "因为cout.fill('#')调用覆盖了之前设置的填充字符'*'，因此最终输出为###123。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_118b3b16-953d-419c-a174-6e23fe87a8de"
+      "doc_68454fa200f30851992cd4a6f9616125"
     ],
     "difficulty": "medium"
   },
@@ -185,7 +185,7 @@
     "ground_truth": "不能。公有继承下，派生类对象仅能直接访问基类的公有成员；基类的保护成员可在派生类成员函数内部访问，但无法通过派生类对象在类外部直接访问，基类私有成员则无论何种继承方式都无法被派生类直接访问。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_118b3b16-953d-419c-a174-6e23fe87a8de"
+      "doc_68454fa200f30851992cd4a6f9616125"
     ],
     "difficulty": "easy"
   },
@@ -195,7 +195,7 @@
     "ground_truth": "基类中声明为virtual的成员函数，在其所有派生类中自动继承虚特性，默认就是虚函数，无需派生类再次使用virtual关键字声明，即可支持运行时多态。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_118b3b16-953d-419c-a174-6e23fe87a8de"
+      "doc_68454fa200f30851992cd4a6f9616125"
     ],
     "difficulty": "medium"
   },
@@ -205,7 +205,7 @@
     "ground_truth": "含有纯虚函数的类称为抽象类。作用：为一类组提供统一的操作接口（纯虚函数）；自身不能实例化，只能作为基类派生新类；将相关派生类组织在一个继承层次中。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_118b3b16-953d-419c-a174-6e23fe87a8de"
+      "doc_68454fa200f30851992cd4a6f9616125"
     ],
     "difficulty": "easy"
   },
@@ -215,7 +215,7 @@
     "ground_truth": "解决多继承中'菱形继承'产生的二义性。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_118b3b16-953d-419c-a174-6e23fe87a8de"
+      "doc_68454fa200f30851992cd4a6f9616125"
     ],
     "difficulty": "medium"
   },
@@ -225,7 +225,7 @@
     "ground_truth": "成员函数重载运算符时参数比友元函数重载少一个（因为成员函数默认带有this指针参数），友元函数重载运算符时参数个数与运算符的操作数个数一致",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_118b3b16-953d-419c-a174-6e23fe87a8de"
+      "doc_68454fa200f30851992cd4a6f9616125"
     ],
     "difficulty": "easy"
   },
@@ -235,7 +235,7 @@
     "ground_truth": "因为Shape类中定义了纯虚函数area()和perimeter()，属于抽象类，抽象类不能直接实例化，必须由其派生类重写所有纯虚函数后才能创建派生类的对象",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_118b3b16-953d-419c-a174-6e23fe87a8de"
+      "doc_68454fa200f30851992cd4a6f9616125"
     ],
     "difficulty": "medium"
   },
@@ -245,7 +245,7 @@
     "ground_truth": "验证对应的问题是「Did we build the system right?」（是否正确构建系统），确认对应的问题是「Did we build the right system?」（是否构建了正确的系统）。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_6c8940aa-baad-4f60-abd6-e0b2066fec68"
+      "doc_6483c2579da8f391444c142fd7228c10"
     ],
     "difficulty": "medium"
   },
@@ -255,7 +255,7 @@
     "ground_truth": "<<include>>关系中，基本用例执行时被包含用例一定执行；<<extend>>关系中，基本用例执行时扩展用例可选择执行。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_6c8940aa-baad-4f60-abd6-e0b2066fec68"
+      "doc_6483c2579da8f391444c142fd7228c10"
     ],
     "difficulty": "hard"
   },
@@ -265,7 +265,7 @@
     "ground_truth": "聚合关系的部分可独立存在，组合关系的部分不可独立存在",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_6c8940aa-baad-4f60-abd6-e0b2066fec68"
+      "doc_6483c2579da8f391444c142fd7228c10"
     ],
     "difficulty": "medium"
   },
@@ -275,7 +275,7 @@
     "ground_truth": "alt框相当于程序中的if/else分支结构，框内被水平虚线分隔为多个区域，每个区域对应一个条件分支，运行时根据条件满足情况执行对应区域",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_6c8940aa-baad-4f60-abd6-e0b2066fec68"
+      "doc_6483c2579da8f391444c142fd7228c10"
     ],
     "difficulty": "medium"
   },
@@ -285,7 +285,7 @@
     "ground_truth": "1.找出适合用状态图描述行为的类；2.确定对象可能存在的状态；3.确定引起状态迁移的事件；4.确定迁移时执行的相应动作；5.精化和细化建模结果",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_6c8940aa-baad-4f60-abd6-e0b2066fec68"
+      "doc_6483c2579da8f391444c142fd7228c10"
     ],
     "difficulty": "easy"
   },
@@ -295,7 +295,7 @@
     "ground_truth": "路径覆盖>条件组合覆盖>判定条件覆盖>条件覆盖>判定覆盖>语句覆盖",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_6c8940aa-baad-4f60-abd6-e0b2066fec68"
+      "doc_6483c2579da8f391444c142fd7228c10"
     ],
     "difficulty": "medium"
   },
@@ -305,7 +305,7 @@
     "ground_truth": "理论上总共有2⁴=16种取值组合；由于存在条件相关性（如A与C相关性），并非所有组合都能达到，因此实际仅需4个测试用例即可覆盖全部条件的取值组合。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_6c8940aa-baad-4f60-abd6-e0b2066fec68"
+      "doc_6483c2579da8f391444c142fd7228c10"
     ],
     "difficulty": "medium"
   },
@@ -315,7 +315,7 @@
     "ground_truth": "考试标准五层协议从上到下依次为应用层、运输层、网络层、数据链路层、物理层；通信子网由网络层、数据链路层、物理层构成",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_10a02aa6-6fc8-473c-9fa8-7fe97a5930ce"
+      "doc_5e183c0b80e608d2f87fbff424976597"
     ],
     "difficulty": "easy"
   },
@@ -325,7 +325,7 @@
     "ground_truth": "核心要求是发送时延≥往返时延（2τ），即帧还未发送完毕时，信号已经可以在网络中跑完一个来回，确保能够检测到碰撞；以太网争用期（2τ）为51.2μs",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_10a02aa6-6fc8-473c-9fa8-7fe97a5930ce"
+      "doc_5e183c0b80e608d2f87fbff424976597"
     ],
     "difficulty": "medium"
   },
@@ -335,7 +335,7 @@
     "ground_truth": "第二个分片的片偏移值为185。因为IP分片的片偏移以8字节为单位，用于标记分片数据部分在原始数据报中的起始位置，第二个分片的数据起始位置为1480字节，1480/8=185；要求分片数据部分是8字节的整数倍，是为了保证片偏移的计算结果为整数，便于接收端按偏移顺序拼接分片恢复原始数据报。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_10a02aa6-6fc8-473c-9fa8-7fe97a5930ce"
+      "doc_5e183c0b80e608d2f87fbff424976597"
     ],
     "difficulty": "medium"
   },
@@ -345,7 +345,7 @@
     "ground_truth": "1. 收到3个重复ACK（轻度拥塞）：新ssthresh等于当前cwnd的一半，新cwnd等于新的ssthresh，进入拥塞避免阶段；2. 发生超时（严重拥塞）：新ssthresh为max(当前cwnd/2, 2)，新cwnd降为1，进入慢开始阶段。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_10a02aa6-6fc8-473c-9fa8-7fe97a5930ce"
+      "doc_5e183c0b80e608d2f87fbff424976597"
     ],
     "difficulty": "hard"
   },
@@ -355,7 +355,7 @@
     "ground_truth": "4次",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_10a02aa6-6fc8-473c-9fa8-7fe97a5930ce"
+      "doc_5e183c0b80e608d2f87fbff424976597"
     ],
     "difficulty": "medium"
   },
@@ -365,7 +365,7 @@
     "ground_truth": "减少80m",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_10a02aa6-6fc8-473c-9fa8-7fe97a5930ce"
+      "doc_5e183c0b80e608d2f87fbff424976597"
     ],
     "difficulty": "hard"
   },
@@ -375,7 +375,7 @@
     "ground_truth": "指数增长（每次×2）",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_10a02aa6-6fc8-473c-9fa8-7fe97a5930ce"
+      "doc_5e183c0b80e608d2f87fbff424976597"
     ],
     "difficulty": "medium"
   },
@@ -385,7 +385,7 @@
     "ground_truth": "CS=0是选中有效",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_1bbd130d-4798-49db-8c5b-0d62e66afc4c"
+      "doc_8a2ba52a5b0d82682160044d0e0005e1"
     ],
     "difficulty": "easy"
   },
@@ -395,7 +395,7 @@
     "ground_truth": "V = (-1)^S × 1.M × 2^(E-127)",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_1bbd130d-4798-49db-8c5b-0d62e66afc4c"
+      "doc_8a2ba52a5b0d82682160044d0e0005e1"
     ],
     "difficulty": "medium"
   },
@@ -405,7 +405,7 @@
     "ground_truth": "lb指令对读取的1字节数据做符号扩展，0xFFD0存入32位寄存器后值为0xFFFFFFD0；lbu指令对读取的1字节数据做零扩展，0xFFD0存入32位寄存器后值为0x000000D0。两者差异在于：lb是有符号读取，高位补符号位；lbu是无符号读取，高位补0。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_1bbd130d-4798-49db-8c5b-0d62e66afc4c"
+      "doc_8a2ba52a5b0d82682160044d0e0005e1"
     ],
     "difficulty": "easy"
   },
@@ -415,7 +415,7 @@
     "ground_truth": "计算步骤：1. 计算偏移值=目标地址-当前PC地址；2. 由于指令地址按字节对齐，偏移值除以2得到imm值；3. 确定rs1、rs2对应的寄存器二进制编号；4. 按B型指令格式编码imm字段，拼合各字段后转换为十六进制。以bge a5, a3, 0x800008a为例，最终机器码为0x00d7da63。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_1bbd130d-4798-49db-8c5b-0d62e66afc4c"
+      "doc_8a2ba52a5b0d82682160044d0e0005e1"
     ],
     "difficulty": "medium"
   },
@@ -425,7 +425,7 @@
     "ground_truth": "2^13 × 16 = 8K × 16bit = 8K × 2B = 16KB",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_1bbd130d-4798-49db-8c5b-0d62e66afc4c"
+      "doc_8a2ba52a5b0d82682160044d0e0005e1"
     ],
     "difficulty": "easy"
   },
@@ -435,7 +435,7 @@
     "ground_truth": "标记位9位，Cache块地址4位，块内地址9位",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_1bbd130d-4798-49db-8c5b-0d62e66afc4c"
+      "doc_8a2ba52a5b0d82682160044d0e0005e1"
     ],
     "difficulty": "medium"
   },
@@ -445,7 +445,7 @@
     "ground_truth": "1. 输入：有零个或多个输入；2. 输出：有一个或多个输出；3. 有穷性：对于任何合法输入，算法必须在有穷时间内完成（程序可以无限循环，算法不可以）；4. 确定性：每条指令有确切的含义，相同输入得到相同输出；5. 可行性：每条指令可以通过已实现的基本操作执行有限次实现。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_56f5a48e-9874-4bc5-90af-b8f383e2958e"
+      "doc_0cca1056f4ef45ecc184722642cd547a"
     ],
     "difficulty": "easy"
   },
@@ -455,7 +455,7 @@
     "ground_truth": "主方法适用于形如T(n)=aT(n/b)+f(n)的递归方程，三种情况：1. 若f(n) < n^{log_b a}（多项式小于），则T(n)=Θ(n^{log_b a})；2. 若f(n)=n^{log_b a}（相等），则T(n)=Θ(n^{log_b a} log n)；3. 若f(n) > n^{log_b a}（多项式大于），则T(n)=Θ(f(n))。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_56f5a48e-9874-4bc5-90af-b8f383e2958e"
+      "doc_0cca1056f4ef45ecc184722642cd547a"
     ],
     "difficulty": "medium"
   },
@@ -465,7 +465,7 @@
     "ground_truth": "最坏时间复杂度为$O(n^2)$；当输入序列已经有序时会触发最坏情况。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_56f5a48e-9874-4bc5-90af-b8f383e2958e"
+      "doc_0cca1056f4ef45ecc184722642cd547a"
     ],
     "difficulty": "easy"
   },
@@ -475,7 +475,7 @@
     "ground_truth": "最好与平均时间复杂度为$O(n)$；可采用Blum等人提出的线性时间选择算法，该算法可保证最坏时间复杂度为$O(n)$。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_56f5a48e-9874-4bc5-90af-b8f383e2958e"
+      "doc_0cca1056f4ef45ecc184722642cd547a"
     ],
     "difficulty": "medium"
   },
@@ -485,7 +485,7 @@
     "ground_truth": "tile用于存储当前待分配的L型骨牌编号，初始值为1，每次递归分割棋盘时为新的L型骨牌分配递增的编号。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_56f5a48e-9874-4bc5-90af-b8f383e2958e"
+      "doc_0cca1056f4ef45ecc184722642cd547a"
     ],
     "difficulty": "easy"
   },
@@ -495,7 +495,7 @@
     "ground_truth": "分治法的子问题相互独立，可能重复求解导致效率低；动态规划的子问题一般相互重叠，每个子问题只求解一次并填表保存，效率更高。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_56f5a48e-9874-4bc5-90af-b8f383e2958e"
+      "doc_0cca1056f4ef45ecc184722642cd547a"
     ],
     "difficulty": "medium"
   },
@@ -505,7 +505,7 @@
     "ground_truth": "dp[i][r] = dp[i-1][r]",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_56f5a48e-9874-4bc5-90af-b8f383e2958e"
+      "doc_0cca1056f4ef45ecc184722642cd547a"
     ],
     "difficulty": "medium"
   },
@@ -515,7 +515,7 @@
     "ground_truth": "dp[j]表示从站点1到站点j的最小租金",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_56f5a48e-9874-4bc5-90af-b8f383e2958e"
+      "doc_0cca1056f4ef45ecc184722642cd547a"
     ],
     "difficulty": "easy"
   },
@@ -525,7 +525,7 @@
     "ground_truth": "人民币面额体系（1、2、5、10、20、50、100）具有\"贪心选择性质\"，贪心法可得最优解；但对任意面额组合（如{1,3,4}凑6）贪心法不一定最优，需用动态规划。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_56f5a48e-9874-4bc5-90af-b8f383e2958e"
+      "doc_0cca1056f4ef45ecc184722642cd547a"
     ],
     "difficulty": "medium"
   },
@@ -535,7 +535,7 @@
     "ground_truth": "选择单位重量价值最大的物品优先装入。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_56f5a48e-9874-4bc5-90af-b8f383e2958e"
+      "doc_0cca1056f4ef45ecc184722642cd547a"
     ],
     "difficulty": "easy"
   },
@@ -545,7 +545,7 @@
     "ground_truth": "左分支编码0",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_56f5a48e-9874-4bc5-90af-b8f383e2958e"
+      "doc_0cca1056f4ef45ecc184722642cd547a"
     ],
     "difficulty": "easy"
   },
@@ -555,7 +555,7 @@
     "ground_truth": "维护连通分支，通过判断待选边的两个顶点是否不在同一连通分量来避免产生回路",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_56f5a48e-9874-4bc5-90af-b8f383e2958e"
+      "doc_0cca1056f4ef45ecc184722642cd547a"
     ],
     "difficulty": "medium"
   },
@@ -565,7 +565,7 @@
     "ground_truth": "主对角线（↘）上顶点行号与列号的差值为常数，副对角线（↗）上顶点行号与列号的和为常数，若两个皇后行差绝对值等于列差绝对值则存在斜线冲突。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_56f5a48e-9874-4bc5-90af-b8f383e2958e"
+      "doc_0cca1056f4ef45ecc184722642cd547a"
     ],
     "difficulty": "easy"
   },
@@ -575,7 +575,7 @@
     "ground_truth": "搜索策略上回溯法采用深度优先搜索，分支限界法采用广度优先或最小耗费优先搜索；活结点存储结构上回溯法采用栈，分支限界法采用队列或优先队列。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_56f5a48e-9874-4bc5-90af-b8f383e2958e"
+      "doc_0cca1056f4ef45ecc184722642cd547a"
     ],
     "difficulty": "medium"
   },
@@ -585,7 +585,7 @@
     "ground_truth": "ub是当前结点对应子树可能获得的最大价值估计，若ub≤bestv，说明该子树中不可能存在比当前最优解更优的解，无需扩展，以此实现上界剪枝、减少不必要的搜索。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_56f5a48e-9874-4bc5-90af-b8f383e2958e"
+      "doc_0cca1056f4ef45ecc184722642cd547a"
     ],
     "difficulty": "medium"
   },
@@ -595,7 +595,7 @@
     "ground_truth": "P→Q仅在P为真（取值1）、Q为假（取值0）时为假，其余三种输入组合下均为真，当前件为假时无论后件真值如何，整个蕴含式都为真（属于善意推定）。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_4d78bac2-b5c8-40a9-b5b0-63871f71c0d9"
+      "doc_35392cb275f32fe8e89faa04b055c76e"
     ],
     "difficulty": "easy"
   },
@@ -605,7 +605,7 @@
     "ground_truth": "¬∃x P(x)等价于∀x ¬P(x)；考试高频的¬∀x(P(x)→Q(x))等价于∃x(P(x)∧¬Q(x))。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_4d78bac2-b5c8-40a9-b5b0-63871f71c0d9"
+      "doc_35392cb275f32fe8e89faa04b055c76e"
     ],
     "difficulty": "medium"
   },
@@ -615,7 +615,7 @@
     "ground_truth": "若先使用US规则，对全称量词前提实例化得到的是任意个体的命题，而ES规则引入的新常量a是特定满足存在量词的个体，无法将US得到的任意个体命题与ES得到的特定个体a的命题匹配，无法推出Q(a)∨R(a)，后续推理无法完成，不能得到结论。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_4d78bac2-b5c8-40a9-b5b0-63871f71c0d9"
+      "doc_35392cb275f32fe8e89faa04b055c76e"
     ],
     "difficulty": "medium"
   },
@@ -625,7 +625,7 @@
     "ground_truth": "关系矩阵为$\\begin{pmatrix}0&1&0\\\\0&0&1\\\\0&0&0\\end{pmatrix}$；自反性：不满足，因为R中不存在<1,1>、<2,2>、<3,3>，矩阵对角线元素不全为1；反自反性：满足，因为R中没有任何形如<x,x>的元素，矩阵对角线元素全为0；对称性：不满足，因为<1,2>∈R但<2,1>∉R，矩阵不对称；传递性：不满足，因为<1,2>∈R且<2,3>∈R，但<1,3>∉R，不满足传递性的定义。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_4d78bac2-b5c8-40a9-b5b0-63871f71c0d9"
+      "doc_35392cb275f32fe8e89faa04b055c76e"
     ],
     "difficulty": "medium"
   },
@@ -635,7 +635,7 @@
     "ground_truth": "极小元为1和3；下界为4，4不属于B但属于全集A。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_4d78bac2-b5c8-40a9-b5b0-63871f71c0d9"
+      "doc_35392cb275f32fe8e89faa04b055c76e"
     ],
     "difficulty": "medium"
   },
@@ -645,7 +645,7 @@
     "ground_truth": "[5]_R={2,5,8}；商集包含3个元素。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_4d78bac2-b5c8-40a9-b5b0-63871f71c0d9"
+      "doc_35392cb275f32fe8e89faa04b055c76e"
     ],
     "difficulty": "easy"
   },
@@ -655,7 +655,7 @@
     "ground_truth": "充要条件为H非空（包含G的单位元e），且对任意a,b∈H，都有a∘b⁻¹∈H；简化证明的原因是：子群需要满足封闭性、结合律、存在单位元、存在逆元四个条件，其中结合律直接继承自大群G，该判定条件可以同时推出封闭性、单位元存在性、逆元存在性，无需单独验证这三个条件。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_4d78bac2-b5c8-40a9-b5b0-63871f71c0d9"
+      "doc_35392cb275f32fe8e89faa04b055c76e"
     ],
     "difficulty": "easy"
   },
@@ -665,7 +665,7 @@
     "ground_truth": "设T有n个顶点，L片树叶，由握手定理得∑d(v)=2|E|；又树的边数满足|E|=n-1，故∑d(v)=2n-2。除度数为k的顶点和L片树叶（度数为1）外，剩余n-1-L个顶点为树中的非叶顶点，度数至少为2，因此有2n-2 ≥ k + L·1 + (n-1-L)·2，化简可得L≥k，即T至少有k片树叶。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_4d78bac2-b5c8-40a9-b5b0-63871f71c0d9"
+      "doc_35392cb275f32fe8e89faa04b055c76e"
     ],
     "difficulty": "medium"
   },
@@ -675,7 +675,7 @@
     "ground_truth": "最终选取的边集为{C-D, A-C, D-F, A-B, E-F}，最小总造价为12万元。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_4d78bac2-b5c8-40a9-b5b0-63871f71c0d9"
+      "doc_35392cb275f32fe8e89faa04b055c76e"
     ],
     "difficulty": "medium"
   },
@@ -685,7 +685,7 @@
     "ground_truth": "推导第4步∃x(A(x) ∧ ¬B(x)) ⇔ ∃x A(x) ∧ ∃x ¬B(x)存在错误，属于「存在量词对合取分配错误」（存在量词对合取不可分配，该方向不成立）；最终结论不成立，因为原推导的前提步骤存在错误，无法得到正确的等值式。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_4d78bac2-b5c8-40a9-b5b0-63871f71c0d9"
+      "doc_35392cb275f32fe8e89faa04b055c76e"
     ],
     "difficulty": "hard"
   },
@@ -695,7 +695,7 @@
     "ground_truth": "化简过程为 $(B - (A \\cap C)) \\cup (A \\cap B \\cap C) = (B \\cap \\overline{A \\cap C}) \\cup (A \\cap B \\cap C) = B \\cap (\\overline{A} \\cup \\overline{C}) \\cup (A \\cap B \\cap C) = (B \\cap \\overline{A}) \\cup (B \\cap \\overline{C}) \\cup (A \\cap B \\cap C) = (B \\cap \\overline{A}) \\cup [B \\cap (\\overline{C} \\cup (A \\cap C))] = (B \\cap \\overline{A}) \\cup [B \\cap (\\overline{C} \\cup A)]$（吸收律）$= B \\cap (\\overline{A} \\cup \\overline{C} \\cup A) = B \\cap (1 \\cup \\overline{C}) = B$，用到的核心代数律有德摩根律、吸收律，最终结果为 $B$。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_4d78bac2-b5c8-40a9-b5b0-63871f71c0d9"
+      "doc_35392cb275f32fe8e89faa04b055c76e"
     ],
     "difficulty": "medium"
   },
@@ -705,7 +705,7 @@
     "ground_truth": "证明分两部分：1. 证 $P(A) \\cap P(B) \\subseteq P(A \\cap B)$：任取 $X \\in P(A) \\cap P(B)$，则 $X \\subseteq A$ 且 $X \\subseteq B$，故 $X \\subseteq A \\cap B$，即 $X \\in P(A \\cap B)$；2. 证 $P(A \\cap B) \\subseteq P(A) \\cap P(B)$：任取 $X \\in P(A \\cap B)$，则 $X \\subseteq A \\cap B$，故 $X \\subseteq A$ 且 $X \\subseteq B$，即 $X \\in P(A)$ 且 $X \\in P(B)$，因此 $X \\in P(A) \\cap P(B)$。综上，$P(A) \\cap P(B) = P(A \\cap B)$。证明两个集合相等的一般思路是分别证明两个集合互相包含（即 $\\subseteq$ 和 $\\supseteq$ 均成立）。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_4d78bac2-b5c8-40a9-b5b0-63871f71c0d9"
+      "doc_35392cb275f32fe8e89faa04b055c76e"
     ],
     "difficulty": "hard"
   },
@@ -715,7 +715,7 @@
     "ground_truth": "4",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_4d78bac2-b5c8-40a9-b5b0-63871f71c0d9"
+      "doc_35392cb275f32fe8e89faa04b055c76e"
     ],
     "difficulty": "easy"
   },
@@ -725,7 +725,7 @@
     "ground_truth": "$W^{(2)} = \\begin{pmatrix}1 & 1 & 1 \\\\ 0 & 1 & 1 \\\\ 1 & 1 & 1\\end{pmatrix}$",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_4d78bac2-b5c8-40a9-b5b0-63871f71c0d9"
+      "doc_35392cb275f32fe8e89faa04b055c76e"
     ],
     "difficulty": "medium"
   },
@@ -735,7 +735,7 @@
     "ground_truth": "运算规则为：输入的正整数若为偶数则除以2，若为奇数则乘3加1，重复操作直到数值变为1；若输入非正整数则输出ERROR",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_0e96d400-1c4f-4c5a-bc94-0e72fd4474b1"
+      "doc_d3cff5519d4f0671eebdc8fb18d9efd2"
     ],
     "difficulty": "easy"
   },
@@ -745,7 +745,7 @@
     "ground_truth": "核心区别为字母能否重复使用；允许字母重复使用的变体使用set实现，不允许字母重复使用的变体使用Counter实现",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_0e96d400-1c4f-4c5a-bc94-0e72fd4474b1"
+      "doc_d3cff5519d4f0671eebdc8fb18d9efd2"
     ],
     "difficulty": "medium"
   },
@@ -755,7 +755,7 @@
     "ground_truth": "后5位最多2个字母；禁止使用字母I和O",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_0e96d400-1c4f-4c5a-bc94-0e72fd4474b1"
+      "doc_d3cff5519d4f0671eebdc8fb18d9efd2"
     ],
     "difficulty": "easy"
   },
@@ -765,7 +765,7 @@
     "ground_truth": "参考代码实现的是正数右移；左移n位的代码表达式为s[n:] + s[:n]",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_0e96d400-1c4f-4c5a-bc94-0e72fd4474b1"
+      "doc_d3cff5519d4f0671eebdc8fb18d9efd2"
     ],
     "difficulty": "medium"
   },
@@ -775,7 +775,7 @@
     "ground_truth": "程序将按照‘可售住宅总规模’的数值对数据做降序排序，之后按顺序逐行输出所有数据行的字段内容，同一行不同字段用空格分隔",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_0e96d400-1c4f-4c5a-bc94-0e72fd4474b1"
+      "doc_d3cff5519d4f0671eebdc8fb18d9efd2"
     ],
     "difficulty": "easy"
   },
@@ -785,7 +785,7 @@
     "ground_truth": "代码会跳过空行、字段拆分后长度不足2的行，以及前两个字段无法转换为浮点数的行（如文件表头）",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_0e96d400-1c4f-4c5a-bc94-0e72fd4474b1"
+      "doc_d3cff5519d4f0671eebdc8fb18d9efd2"
     ],
     "difficulty": "medium"
   },
@@ -795,7 +795,7 @@
     "ground_truth": "软件过程",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_c252d16d-5290-4dd9-8df5-ce11a93f89bf"
+      "doc_0229975145df745e4e35eba9e1071a0a"
     ],
     "difficulty": "easy"
   },
@@ -805,7 +805,7 @@
     "ground_truth": "确认阶段",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_c252d16d-5290-4dd9-8df5-ce11a93f89bf"
+      "doc_0229975145df745e4e35eba9e1071a0a"
     ],
     "difficulty": "medium"
   },
@@ -815,7 +815,7 @@
     "ground_truth": "统一建模语言",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_c252d16d-5290-4dd9-8df5-ce11a93f89bf"
+      "doc_0229975145df745e4e35eba9e1071a0a"
     ],
     "difficulty": "easy"
   },
@@ -825,7 +825,7 @@
     "ground_truth": "依赖（Dependency）",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_c252d16d-5290-4dd9-8df5-ce11a93f89bf"
+      "doc_0229975145df745e4e35eba9e1071a0a"
     ],
     "difficulty": "medium"
   },
@@ -835,7 +835,7 @@
     "ground_truth": "ABC",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_c252d16d-5290-4dd9-8df5-ce11a93f89bf"
+      "doc_0229975145df745e4e35eba9e1071a0a"
     ],
     "difficulty": "medium"
   },
@@ -845,7 +845,7 @@
     "ground_truth": "武汉理工大学现有马房山校区、余家头校区、南湖校区三个主要校区，主校区是马房山校区，功能定位为学校行政中心、材料科学与工程学科群、理学与人文社科。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "medium"
   },
@@ -855,7 +855,7 @@
     "ground_truth": "甲和丁参加了围棋优胜比赛",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_295ada27-8dee-4462-9c89-327214584b9c"
+      "doc_354e9ec7cc056e450c2cf4f7c71223a1"
     ],
     "difficulty": "medium"
   },
@@ -865,7 +865,7 @@
     "ground_truth": "证明：任取a,b∈G，由群的性质可知(a*b)²=e，又群中任意元素的逆元满足(a*b)⁻¹=b⁻¹*a⁻¹，结合a²=e可得a⁻¹=a，b²=e可得b⁻¹=b，因此(a*b)⁻¹=b*a，又因为(a*b)⁻¹=a*b，所以a*b=b*a，对G中任意元素a,b都成立，故G为阿贝尔群。",
     "category": "专业课程",
     "relevant_doc_ids": [
-      "doc_295ada27-8dee-4462-9c89-327214584b9c"
+      "doc_354e9ec7cc056e450c2cf4f7c71223a1"
     ],
     "difficulty": "medium"
   },
@@ -875,7 +875,7 @@
     "ground_truth": "get 和 put 操作的时间复杂度均为 O(1)",
     "category": "面试刷题",
     "relevant_doc_ids": [
-      "doc_ac1f7d77-c592-4611-9512-3bc92fe7bae4"
+      "doc_fb78f4c97e1be296c218a98c3cc2632a"
     ],
     "difficulty": "medium"
   },
@@ -885,7 +885,7 @@
     "ground_truth": "通常采用 BFS（广度优先搜索）算法，核心数据结构是队列",
     "category": "面试刷题",
     "relevant_doc_ids": [
-      "doc_ac1f7d77-c592-4611-9512-3bc92fe7bae4"
+      "doc_fb78f4c97e1be296c218a98c3cc2632a"
     ],
     "difficulty": "medium"
   },
@@ -895,7 +895,7 @@
     "ground_truth": "记录当前层的节点数量size，遍历当前层所有节点时，若当前遍历到的节点是该层最后一个（即索引i等于size-1），则将其值加入结果数组，对应判断逻辑为`if(i===size-1) res.push(node.val);`",
     "category": "面试刷题",
     "relevant_doc_ids": [
-      "doc_ac1f7d77-c592-4611-9512-3bc92fe7bae4"
+      "doc_fb78f4c97e1be296c218a98c3cc2632a"
     ],
     "difficulty": "easy"
   },
@@ -905,7 +905,7 @@
     "ground_truth": "解法核心为跳过重复元素去重，固定第一个数时，若当前元素与前一个元素相同则直接跳过（对应代码`if(i>0&&nums[i]===nums[i-1]) continue;`），找到符合条件的三元组后，还需跳过左右指针指向的重复元素避免结果重复。",
     "category": "面试刷题",
     "relevant_doc_ids": [
-      "doc_ac1f7d77-c592-4611-9512-3bc92fe7bae4"
+      "doc_fb78f4c97e1be296c218a98c3cc2632a"
     ],
     "difficulty": "medium"
   },
@@ -915,7 +915,7 @@
     "ground_truth": "O(n log n)",
     "category": "面试刷题",
     "relevant_doc_ids": [
-      "doc_ac1f7d77-c592-4611-9512-3bc92fe7bae4"
+      "doc_fb78f4c97e1be296c218a98c3cc2632a"
     ],
     "difficulty": "medium"
   },
@@ -925,7 +925,7 @@
     "ground_truth": "dp[i] = dp[i-1] + dp[i-2]",
     "category": "面试刷题",
     "relevant_doc_ids": [
-      "doc_ac1f7d77-c592-4611-9512-3bc92fe7bae4"
+      "doc_fb78f4c97e1be296c218a98c3cc2632a"
     ],
     "difficulty": "easy"
   },
@@ -935,7 +935,7 @@
     "ground_truth": "原地哈希（桶排序思想），值 i 放到下标 i-1，答案一定在 [1, n+1] 范围内",
     "category": "面试刷题",
     "relevant_doc_ids": [
-      "doc_ac1f7d77-c592-4611-9512-3bc92fe7bae4"
+      "doc_fb78f4c97e1be296c218a98c3cc2632a"
     ],
     "difficulty": "hard"
   },
@@ -945,7 +945,7 @@
     "ground_truth": "智能体是能通过传感器感知环境，自主地通过执行器采取行动以达成目标的实体，四个关键要素分别为：环境（外部世界）、传感器（感知环境的能力）、执行器（影响环境的手段）、自主性（独立决策，非被动响应，是核心特征）。",
     "category": "AI学习",
     "relevant_doc_ids": [
-      "doc_f0162488-a098-4e0d-98ae-d86ef42763fd"
+      "doc_62e0558004ecae21959909f0061ea8c2"
     ],
     "difficulty": "easy"
   },
@@ -955,7 +955,7 @@
     "ground_truth": "AlphaGo Zero属于学习型智能体，该类型智能体的核心能力是通过环境互动自主学习，需要回答的核心问题是如何改进策略。",
     "category": "AI学习",
     "relevant_doc_ids": [
-      "doc_f0162488-a098-4e0d-98ae-d86ef42763fd"
+      "doc_62e0558004ecae21959909f0061ea8c2"
     ],
     "difficulty": "medium"
   },
@@ -965,7 +965,7 @@
     "ground_truth": "问题→Planner（生成步骤列表）→Executor（逐步执行，带上下文）→最终答案",
     "category": "AI学习",
     "relevant_doc_ids": [
-      "doc_f0162488-a098-4e0d-98ae-d86ef42763fd"
+      "doc_62e0558004ecae21959909f0061ea8c2"
     ],
     "difficulty": "easy"
   },
@@ -975,7 +975,7 @@
     "ground_truth": "应选择Dify。Dify定位为开源LLM应用开发平台，支持本地+云端部署，拥有8677+插件，适合企业级复杂业务场景。",
     "category": "AI学习",
     "relevant_doc_ids": [
-      "doc_f0162488-a098-4e0d-98ae-d86ef42763fd"
+      "doc_62e0558004ecae21959909f0061ea8c2"
     ],
     "difficulty": "medium"
   },
@@ -985,7 +985,7 @@
     "ground_truth": "PPO需要4个模型，分别为策略模型、参考模型、价值模型、奖励模型；GRPO仅需2个模型，分别为策略模型和参考模型。",
     "category": "AI学习",
     "relevant_doc_ids": [
-      "doc_f0162488-a098-4e0d-98ae-d86ef42763fd"
+      "doc_62e0558004ecae21959909f0061ea8c2"
     ],
     "difficulty": "medium"
   },
@@ -995,7 +995,7 @@
     "ground_truth": "武汉理工大学由原武汉工业大学、原武汉交通科技大学和原武汉汽车工业大学三校于2000年5月27日合并组建而成。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_4dcd7c94-8c2f-4fdc-ae18-3669c59dfd36"
+      "doc_4b956c30b8728c57c226d0b91276c731"
     ],
     "difficulty": "medium"
   }

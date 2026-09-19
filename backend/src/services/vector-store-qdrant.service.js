@@ -1,6 +1,7 @@
 "use strict";
 
 const config = require('../config');
+const { logEvent } = require('./observability.service');
 
 const DEFAULT_COLLECTION = 'wuli_elf_chunks';
 const DENSE_DIM = 512;
@@ -92,19 +93,20 @@ class QdrantVectorStore {
           },
           ...(quantization ? { quantization_config: quantization } : {}),
         });
-        console.log(
-          `[QdrantStore] 已创建 collection: ${this.collectionName} (dense ${DENSE_DIM}d + sparse)` +
-          (quantization ? ` [量化: ${this.quantization}]` : ''),
-        );
+        logEvent('info', 'vector_store_collection_created', {
+          collection: this.collectionName,
+          denseDim: DENSE_DIM,
+          quantization: quantization || null,
+        });
       } else {
-        console.log(`[QdrantStore] 已连接 collection: ${this.collectionName}`);
+        logEvent('info', 'vector_store_collection_connected', { collection: this.collectionName });
         // 已存在的 collection 补配量化：新写入的点开始量化，存量点需重建后全量生效
         if (this.quantization === 'int8') {
           try {
             await this._client.updateCollection(this.collectionName, { quantization_config: this._quantizationConfig() });
-            console.log('[QdrantStore] 已为现有 collection 开启 int8 量化（存量向量需重建后全量生效）');
+            logEvent('info', 'vector_store_quantization_enabled_existing', { message: '已为现有 collection 开启 int8 量化（存量向量需重建后全量生效）' });
           } catch (err) {
-            console.warn(`[QdrantStore] 开启量化失败(忽略): ${err.message}`);
+            logEvent('warn', 'vector_store_quantization_enable_failed', { message: '开启量化失败(忽略)', error: err.message });
           }
         }
       }
@@ -120,13 +122,13 @@ class QdrantVectorStore {
       this._readyChecked = false;
       this._ready = true;
       if (this._readyResolve) this._readyResolve();
-      console.log(`[QdrantStore] 就绪，当前 ${this._pointCount} 条向量`);
+      logEvent('info', 'vector_store_ready', { pointCount: this._pointCount });
     } catch (err) {
       // 降级放行(与原行为一致):search 等操作按 _client 判空返回空结果;
       // 差别在于现在会安排后台重连,而不是打一条 warn 后永久吞掉故障。
       // _client 必须置空:探测失败时客户端实例已创建,若保留,search 会带着
       // 不可达的 client 抛 ECONNREFUSED,而不是按降级契约返回空结果
-      console.warn(`[QdrantStore] 连接失败(将自动重连，期间 search 返回空): ${err.message}`);
+      logEvent('warn', 'vector_store_connect_failed', { message: '连接失败(将自动重连，期间 search 返回空)', error: err.message });
       this._client = null;
       this._connected = false;
       this._ready = true;
@@ -166,11 +168,11 @@ class QdrantVectorStore {
           field_schema: 'keyword',
           wait: true,
         });
-        console.log(`[QdrantStore] 已创建 payload 索引: ${field}`);
+        logEvent('info', 'vector_store_payload_index_created', { field });
       } catch (err) {
         const msg = String(err?.message || err || '');
         if (/already exists/i.test(msg)) continue;
-        console.warn(`[QdrantStore] 创建 payload 索引失败(${field}): ${msg}`);
+        logEvent('warn', 'vector_store_payload_index_failed', { field, error: msg });
       }
     }
   }
@@ -202,7 +204,7 @@ class QdrantVectorStore {
     try {
       await this._readyPromise;
     } catch (err) {
-      console.warn(`[QdrantStore] ensureReady 失败: ${err.message}`);
+      logEvent('warn', 'vector_store_ensure_ready_failed', { error: err.message });
       this._readyChecked = true;
     }
     return this._readyPromise;
@@ -215,24 +217,24 @@ class QdrantVectorStore {
     try {
       const docs = await this._documentProvider();
       if (!Array.isArray(docs) || docs.length === 0) {
-        console.log('[QdrantStore] 文档库为空，跳过重建');
+        logEvent('info', 'vector_store_rebuild_skipped_empty', { message: '文档库为空，跳过重建' });
         return;
       }
-      console.log(`[QdrantStore] collection 为空，从 ${docs.length} 个文档重建索引...`);
+      logEvent('info', 'vector_store_rebuild_start', { docCount: docs.length });
       const t0 = Date.now();
       const { IndexingService } = require('./indexing.service');
       const { EmbeddingService } = require('./embedding.service');
       const indexing = new IndexingService(this, new EmbeddingService());
       await indexing.reindexAll(docs);
-      console.log(`[QdrantStore] 重建完成，共 ${this._pointCount} 条向量，耗时 ${Date.now() - t0} ms`);
+      logEvent('info', 'vector_store_rebuild_done', { pointCount: this._pointCount, elapsedMs: Date.now() - t0 });
     } catch (err) {
-      console.warn(`[QdrantStore] 重建失败: ${err.message}`);
+      logEvent('warn', 'vector_store_rebuild_failed', { error: err.message });
       if (err.cause) {
         const causeMsg = err.cause.message || (typeof err.cause === 'string' ? err.cause : JSON.stringify(err.cause).slice(0, 300));
-        console.warn(`[QdrantStore] 重建失败 cause: ${causeMsg}`);
+        logEvent('warn', 'vector_store_rebuild_failed_cause', { cause: causeMsg });
       }
       if (err.stack) {
-        console.warn('[QdrantStore] 重建失败 stack:\n' + err.stack.split('\n').slice(0, 8).join('\n'));
+        logEvent('warn', 'vector_store_rebuild_failed_stack', { stack: err.stack.split('\n').slice(0, 8).join('\n') });
       }
     } finally {
       this._initializing = false;
@@ -283,7 +285,7 @@ class QdrantVectorStore {
           break;
         } catch (err) {
           if (attempt === UPSERT_MAX_RETRY) throw err;
-          console.warn(`[QdrantStore] upsert 批次 ${i / BATCH_SIZE + 1} 第 ${attempt} 次失败(${err.message})，重试...`);
+          logEvent('warn', 'vector_store_upsert_retry', { batch: i / BATCH_SIZE + 1, attempt, error: err.message });
           await new Promise(r => setTimeout(r, 300 * attempt));
         }
       }
@@ -432,9 +434,9 @@ class QdrantVectorStore {
     if (!this._client) return;
     try {
       await this._client.deleteCollection(this.collectionName);
-      console.log(`[QdrantStore] 已删除 collection: ${this.collectionName}`);
+      logEvent('info', 'vector_store_collection_deleted', { collection: this.collectionName });
     } catch (err) {
-      console.warn(`[QdrantStore] 删除 collection 失败: ${err.message}`);
+      logEvent('warn', 'vector_store_collection_delete_failed', { error: err.message });
     }
     this._pointCount = 0;
     this._idMap.clear();

@@ -7,6 +7,7 @@ const { LongTermMemory, MEMORY_TYPES } = require('./memory/long-term-memory');
 const { UserProfile } = require('./memory/user-profile');
 const { parseRedisList } = require('./memory/helpers');
 const config = require('../config');
+const { logEvent } = require('./observability.service');
 
 /**
  * MemoryService — Agent 记忆系统（语义检索版）
@@ -209,7 +210,7 @@ class MemoryService {
       const result = await aiService.getCompletion(prompt, [], { timeout: 8000, retries: 0 });
       const items = parseJsonArray(result.content);
       if (items === null) {
-        console.warn('[Memory] LLM 记忆提取输出解析失败，回退正则提取');
+        logEvent('warn', 'memory_llm_extract_parse_failed_regex_fallback', { message: 'LLM 记忆提取输出解析失败，回退正则提取' });
         return false;
       }
       let saved = 0;
@@ -221,10 +222,10 @@ class MemoryService {
         await this.addLongTerm(userId, { type, content, source: 'llm-extraction', confidence });
         saved++;
       }
-      if (saved > 0) console.log(`[Memory] LLM 提取 ${saved} 条记忆（四类治理）`);
+      if (saved > 0) logEvent('info', 'memory_llm_extract_saved', { saved });
       return true;
     } catch (err) {
-      console.warn(`[Memory] LLM 记忆提取失败，回退正则提取: ${err.message}`);
+      logEvent('warn', 'memory_llm_extract_failed_regex_fallback', { error: err.message });
       return false;
     }
   }

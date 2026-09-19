@@ -5,7 +5,7 @@
     "ground_truth": "武汉理工大学的校训是厚德博学、追求卓越。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -15,7 +15,7 @@
     "ground_truth": "武汉理工大学是教育部直属全国重点大学，是国家211工程和双一流建设高校。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -25,7 +25,7 @@
     "ground_truth": "武汉理工大学有三个校区：马房山校区、余家头校区和南湖校区。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -35,7 +35,7 @@
     "ground_truth": "马房山校区位于武汉市洪山区珞狮路122号，是学校行政中心，以材料科学与工程学科群、理学与人文社科为主。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "medium"
   },
@@ -45,7 +45,7 @@
     "ground_truth": "武汉理工大学于2000年5月27日由原武汉工业大学、原武汉交通科技大学和原武汉汽车工业大学三校合并组建。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -55,7 +55,7 @@
     "ground_truth": "武汉理工大学办学历史最早可追溯至1898年成立的湖北工艺学堂。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -65,7 +65,7 @@
     "ground_truth": "材料科学与工程学科在全国第四轮学科评估中获评A+等级，位列全国第一。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -75,7 +75,7 @@
     "ground_truth": "武汉理工大学的优势学科包括材料科学与工程（A+）、船舶与海洋工程、交通运输工程、机械工程、管理科学与工程、设计学、马克思主义理论、环境科学与工程等。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "medium"
   },
@@ -85,7 +85,7 @@
     "ground_truth": "武汉理工大学现有25个学院（部），涵盖工学、理学、管理学、经济学、文学、法学、艺术学等七大学科门类。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -95,7 +95,7 @@
     "ground_truth": "武汉理工大学现有教职工5300余人，其中专任教师约3100人。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -105,7 +105,7 @@
     "ground_truth": "武汉理工大学有中国科学院院士2人（含双聘）、中国工程院院士5人（含双聘）。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -115,7 +115,7 @@
     "ground_truth": "图书馆总建筑面积约7.7万平方米，阅览座位8000余个，馆藏纸质图书超过370万册，电子图书约300万册，中外文数据库约200个。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -125,7 +125,7 @@
     "ground_truth": "学校拥有硅酸盐建筑材料国家重点实验室、材料复合新技术国家重点实验室（联合）、光纤传感技术与网络国家工程研究中心、国家水运安全工程技术研究中心等国家级科研平台。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "medium"
   },
@@ -135,7 +135,7 @@
     "ground_truth": "南湖校区综合体育馆可容纳6000人。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -145,7 +145,7 @@
     "ground_truth": "厚德博学取自《周易》君子以厚德载物和《论语》博学而笃志，追求卓越代表了武理工人精益求精、奋发向上的精神风貌。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "medium"
   },
@@ -155,7 +155,7 @@
     "ground_truth": "学校拥有各类学生社团200余个。特色品牌活动包括理工大讲堂、校园文化艺术节、创新杯竞赛、理工杯体育赛事、志愿服务月和社团文化节等。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "medium"
   },
@@ -165,7 +165,7 @@
     "ground_truth": "学校与全球40多个国家和地区的200余所高校和科研机构建立了稳定的合作关系。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -175,7 +175,7 @@
     "ground_truth": "学校现有来自80余个国家的国际学生约1500人。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -185,7 +185,7 @@
     "ground_truth": "本科生就业率连续多年保持在95%以上，主要就业方向包括世界500强企业（华为、中兴、上汽、东风等）、国家部委及事业单位、科研院所和高等院校、自主创业及继续深造。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "medium"
   },
@@ -195,7 +195,7 @@
     "ground_truth": "学校的标志性建筑是飞马广场，一匹奋蹄腾飞的白马雕塑象征着武汉理工大学蒸蒸日上、锐意进取的精神追求。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -205,7 +205,7 @@
     "ground_truth": "学校总占地面积约267万平方米（4000余亩），校舍总建筑面积约190万平方米。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -215,7 +215,7 @@
     "ground_truth": "余家头校区位于武汉市武昌区和平大道1040号，位于长江之滨，以船舶与海洋工程、交通运输工程为特色，拥有国家水运安全工程技术研究中心。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "medium"
   },
@@ -225,7 +225,7 @@
     "ground_truth": "学校拥有博士后科研流动站17个，一级学科博士点22个，一级学科硕士点45个，本科专业90余个。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -235,7 +235,7 @@
     "ground_truth": "学校开展中英、中美、中法、中澳等多层次国际合作办学项目，包括联合培养、双学位、工程师教育和学分互认交换等。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "medium"
   },
@@ -245,7 +245,7 @@
     "ground_truth": "招生办公室电话为027-87859017 / 027-87658160。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -255,7 +255,7 @@
     "ground_truth": "知名校友包括中国工程院院士赵东元、东风汽车集团有限公司董事长竺延风、中国交通建设集团有限公司董事长王彤宙等。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -265,7 +265,7 @@
     "ground_truth": "学校有三校区体育馆、3个标准化田径场、2个游泳池以及篮球场、排球场、网球场等室外运动场地30余片。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -275,7 +275,7 @@
     "ground_truth": "南湖校区是学校最新建设的校区，环境优美，现代化教学设施齐全，图书馆、体育馆、学生公寓等硬件条件为全校最优。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "medium"
   },
@@ -285,7 +285,7 @@
     "ground_truth": "材料科学与工程学科入选国家双一流建设学科，在第四轮学科评估中获评A+等级，位列全国第一。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "medium"
   },
@@ -295,7 +295,7 @@
     "ground_truth": "学校年招收本科生约9200人，硕士研究生约5800人，博士研究生约800人。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "easy"
   },
@@ -305,7 +305,7 @@
     "ground_truth": "材料科学与工程学院属于工学类，是武汉理工大学材料科学与工程学科的核心依托学院。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "medium"
   },
@@ -315,7 +315,7 @@
     "ground_truth": "学生宿舍全部为标准公寓化配置，南湖校区和余家头校区大部分宿舍配备空调、热水器和独立卫生间。校内有学生食堂10余个，提供多样化餐饮选择。",
     "category": "学校概况",
     "relevant_doc_ids": [
-      "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "difficulty": "medium"
   }

@@ -3,6 +3,7 @@
 const { AiService } = require("./ai.service");
 const { RagService } = require("./rag.service");
 const config = require("../config");
+const { logEvent } = require('./observability.service');
 
 const REWRITE_PROMPT = `你是校园知识库检索查询改写器。
 
@@ -202,7 +203,7 @@ class AgenticRagService {
       if (error.name === "AbortError" || options.signal?.aborted) throw error;
       trace.finishReason = "retrieval_error";
       trace.fallbackReason = error.message;
-      console.warn("[AgenticRAG] 检索编排失败，降级现有 RAG:", error.message);
+      logEvent('warn', 'agentic_rag_orchestration_failed_fallback', { error: error.message });
     }
 
     if (!evidence) {
@@ -250,7 +251,7 @@ class AgenticRagService {
       trace.finishReason = "generation_error";
       trace.fallbackReason = error.message;
       trace.totalMs = Date.now() - startedAt;
-      console.warn("[AgenticRAG] 增强生成失败:", error.message);
+      logEvent('warn', 'agentic_rag_generation_failed', { error: error.message });
       yield { type: "trace", channel: "agentic_rag", trace };
       if (!fullReply) {
         yield* this.ragService.chatStream(message, history, options);

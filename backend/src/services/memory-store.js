@@ -1,5 +1,7 @@
 "use strict";
 
+const { logEvent } = require('./observability.service');
+
 const path = require('path');
 const fs = require('fs');
 
@@ -117,9 +119,9 @@ class SQLiteStore {
         return count;
       });
       const count = tx();
-      console.log(`[Store] ✅ 已从 store.json 迁移 ${count} 条记录到 SQLite`);
+      logEvent('info', 'store_migration_done', { count });
     } catch (e) {
-      console.warn('[Store] 迁移旧数据失败（可忽略）:', e.message);
+      logEvent('warn', 'store_migration_failed', { message: '迁移旧数据失败（可忽略）', error: e.message });
     }
   }
 
@@ -394,7 +396,7 @@ class SQLiteStore {
 // ==================== 单例 ====================
 
 const store = new SQLiteStore();
-console.log('[Store] 使用 SQLite（本地持久化）');
+logEvent('info', 'store_backend_sqlite', { message: '使用 SQLite（本地持久化）' });
 
 // ========== 会话管理（不变） ==========
 

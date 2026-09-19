@@ -18,6 +18,7 @@ const {
   collectPrometheusSnapshot,
   ensureEventLoopMonitor,
 } = require('../services/prometheus-metrics.service');
+const { logEvent } = require('../services/observability.service');
 
 const router = express.Router();
 
@@ -25,7 +26,7 @@ const router = express.Router();
 if (config.metricsPrometheus?.enabled === true) {
   ensureEventLoopMonitor();
   if (!config.metricsPrometheus?.token) {
-    console.warn('[Metrics] METRICS_PROMETHEUS_ENABLED=true 且未设置 METRICS_PROMETHEUS_TOKEN：/api/metrics/prometheus 将匿名可读（含模型成本数据），公网部署请设置 token');
+    logEvent('warn', 'metrics_prometheus_token_missing', { message: 'METRICS_PROMETHEUS_ENABLED=true 且未设置 METRICS_PROMETHEUS_TOKEN：/api/metrics/prometheus 将匿名可读（含模型成本数据），公网部署请设置 token' });
   }
 }
 

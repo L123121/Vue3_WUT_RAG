@@ -2,6 +2,7 @@
 
 const config = require('../config');
 const { QueryCache } = require('../utils/query-cache');
+const { logEvent } = require('./observability.service');
 
 // query rewrite 缓存（模块级单例）：同 query + 最近 6 条历史窗口直接命中
 const rewriteCache = new QueryCache(
@@ -105,10 +106,10 @@ ${historyText}
       rewriteCache.set(cacheKey, rewritten);
     }
 
-    console.log(`[QueryRewrite] "${query}" → "${rewritten}"`);
+    logEvent('info', 'rag_query_rewrite_applied', { query, rewritten });
     return rewritten;
   } catch (err) {
-    console.warn(`[QueryRewrite] 改写失败: ${err.message}`);
+    logEvent('warn', 'rag_query_rewrite_failed', { error: err.message });
     return null;
   }
 }
@@ -155,10 +156,10 @@ async function generateHydeDocument(query, aiService) {
     if (doc.length < 30 || doc.length > 600) return null;
 
     if (config.rag.cacheEnabled) hydeCache.set(cacheKey, doc);
-    console.log(`[HyDE] "${q}" → 假设文档 ${doc.length} 字符`);
+    logEvent('info', 'rag_hyde_generated', { query: q, docChars: doc.length });
     return doc;
   } catch (err) {
-    console.warn(`[HyDE] 生成失败: ${err.message}`);
+    logEvent('warn', 'rag_hyde_failed', { error: err.message });
     return null;
   }
 }
@@ -207,10 +208,10 @@ async function generateStepBackQuery(query, aiService) {
     if (stepped === q) return null;
 
     if (config.rag.cacheEnabled) stepBackCache.set(cacheKey, stepped);
-    console.log(`[StepBack] "${q}" → "${stepped}"`);
+    logEvent('info', 'rag_stepback_generated', { query: q, stepped });
     return stepped;
   } catch (err) {
-    console.warn(`[StepBack] 生成失败: ${err.message}`);
+    logEvent('warn', 'rag_stepback_failed', { error: err.message });
     return null;
   }
 }

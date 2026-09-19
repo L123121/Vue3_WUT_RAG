@@ -1,0 +1,218 @@
+{
+  "schema": 1,
+  "description": "评测语料清单：scripts/rag-eval/dataset/*.json 中 relevant_doc_ids 的唯一事实来源。在此清单之外的知识库文档都属于评测语料之外，验证脚本会报出来。",
+  "idScheme": "doc_<sha256(title\\u0000category)[0:32]>  —— 见 backend/src/utils/doc-id.js",
+  "generatedFrom": "入库批次遗留库（legacyId 为改造前的随机 UUID，仅供一次性迁移与溯源）",
+  "docs": [
+    {
+      "title": "Agent学习笔记",
+      "category": "AI学习",
+      "docId": "doc_62e0558004ecae21959909f0061ea8c2",
+      "legacyId": "doc_f0162488-a098-4e0d-98ae-d86ef42763fd",
+      "chunkCount": 49
+    },
+    {
+      "title": "Prompt工程实践笔记",
+      "category": "AI学习",
+      "docId": "doc_034c8717d291b38b96a4136812001ed3",
+      "legacyId": "doc_30f6765b-4b82-4e76-a7a4-bea169ca02f5",
+      "chunkCount": 7
+    },
+    {
+      "title": "RAG系统实战笔记",
+      "category": "AI学习",
+      "docId": "doc_fa8787e405dc3e95083754e59855f77f",
+      "legacyId": "doc_841b78c7-a018-4043-bbca-99eca91c9fed",
+      "chunkCount": 9
+    },
+    {
+      "title": "数据结构期末复习要点",
+      "category": "general",
+      "docId": "doc_af9cda779b730ce8a8d24587d4867e9c",
+      "legacyId": "doc_fc7d91b7-6b3f-4456-a1f1-84856ebf1bcd",
+      "chunkCount": 4
+    },
+    {
+      "title": "Python题库整理",
+      "category": "专业课程",
+      "docId": "doc_d3cff5519d4f0671eebdc8fb18d9efd2",
+      "legacyId": "doc_0e96d400-1c4f-4c5a-bc94-0e72fd4474b1",
+      "chunkCount": 56
+    },
+    {
+      "title": "操作系统期末复习笔记",
+      "category": "专业课程",
+      "docId": "doc_b9d0e31f2105906b1c64509962aa1f98",
+      "legacyId": "doc_2648954d-3eb4-4de8-be96-3c060aad9a6d",
+      "chunkCount": 22
+    },
+    {
+      "title": "操作系统高频面试题",
+      "category": "专业课程",
+      "docId": "doc_8635a4d8b2c6a05e94a153cc8078e505",
+      "legacyId": "doc_f114d0eb-4930-4ce1-9090-55fef364e118",
+      "chunkCount": 8
+    },
+    {
+      "title": "数据库原理期末复习笔记",
+      "category": "专业课程",
+      "docId": "doc_cd344c7da0e32539aee8d36427ae507d",
+      "legacyId": "doc_8d0d7743-166a-4c57-8e5a-9cef99a9775c",
+      "chunkCount": 19
+    },
+    {
+      "title": "数据库高频面试题",
+      "category": "专业课程",
+      "docId": "doc_4b8fcde53e66009692f4d8c1d01d9a60",
+      "legacyId": "doc_0fbe53d7-a5df-4dd0-b875-c55df4399b87",
+      "chunkCount": 9
+    },
+    {
+      "title": "离散结构全部题目汇总",
+      "category": "专业课程",
+      "docId": "doc_354e9ec7cc056e450c2cf4f7c71223a1",
+      "legacyId": "doc_295ada27-8dee-4462-9c89-327214584b9c",
+      "chunkCount": 18
+    },
+    {
+      "title": "离散结构复习总结",
+      "category": "专业课程",
+      "docId": "doc_35392cb275f32fe8e89faa04b055c76e",
+      "legacyId": "doc_4d78bac2-b5c8-40a9-b5b0-63871f71c0d9",
+      "chunkCount": 125
+    },
+    {
+      "title": "算法设计与分析期末复习笔记",
+      "category": "专业课程",
+      "docId": "doc_0cca1056f4ef45ecc184722642cd547a",
+      "legacyId": "doc_56f5a48e-9874-4bc5-90af-b8f383e2958e",
+      "chunkCount": 137
+    },
+    {
+      "title": "计算机组成原理期末复习笔记",
+      "category": "专业课程",
+      "docId": "doc_8a2ba52a5b0d82682160044d0e0005e1",
+      "legacyId": "doc_1bbd130d-4798-49db-8c5b-0d62e66afc4c",
+      "chunkCount": 55
+    },
+    {
+      "title": "计算机网络期末复习总结",
+      "category": "专业课程",
+      "docId": "doc_5e183c0b80e608d2f87fbff424976597",
+      "legacyId": "doc_10a02aa6-6fc8-473c-9fa8-7fe97a5930ce",
+      "chunkCount": 67
+    },
+    {
+      "title": "软件工程卓越工程师专业 2024 版本科培养方案",
+      "category": "专业课程",
+      "docId": "doc_3e93a9b8cd50efb11b125b5872eaab42",
+      "legacyId": "doc_d5c182ff-6ed7-46a8-9a59-bafab99e1940",
+      "chunkCount": 88
+    },
+    {
+      "title": "软件工程基础客观题",
+      "category": "专业课程",
+      "docId": "doc_0229975145df745e4e35eba9e1071a0a",
+      "legacyId": "doc_c252d16d-5290-4dd9-8df5-ce11a93f89bf",
+      "chunkCount": 46
+    },
+    {
+      "title": "软件工程基础期末复习笔记",
+      "category": "专业课程",
+      "docId": "doc_6483c2579da8f391444c142fd7228c10",
+      "legacyId": "doc_6c8940aa-baad-4f60-abd6-e0b2066fec68",
+      "chunkCount": 64
+    },
+    {
+      "title": "面向对象编程考试重点总结",
+      "category": "专业课程",
+      "docId": "doc_68454fa200f30851992cd4a6f9616125",
+      "legacyId": "doc_118b3b16-953d-419c-a174-6e23fe87a8de",
+      "chunkCount": 130
+    },
+    {
+      "title": "campus",
+      "category": "学校概况",
+      "docId": "doc_4b956c30b8728c57c226d0b91276c731",
+      "legacyId": "doc_4dcd7c94-8c2f-4fdc-ae18-3669c59dfd36",
+      "chunkCount": 12
+    },
+    {
+      "title": "武汉理工大学交通出行指南",
+      "category": "学校概况",
+      "docId": "doc_da88e7f3edfd9d4942b9277ae25d9e0b",
+      "legacyId": "doc_ec68e10a-cf04-45ac-86de-3169f1f420bc",
+      "chunkCount": 4
+    },
+    {
+      "title": "武汉理工大学体育场馆使用指南",
+      "category": "学校概况",
+      "docId": "doc_72e249818053552ed79ec30d18ea83d3",
+      "legacyId": "doc_952d57cb-8eb6-42f9-b753-e50262876715",
+      "chunkCount": 3
+    },
+    {
+      "title": "武汉理工大学医疗与健康服务指南",
+      "category": "学校概况",
+      "docId": "doc_0a7e6cac4603692fd46f2db2d563c886",
+      "legacyId": "doc_c55c9e98-aa27-4c9d-9a70-71487f6ac62e",
+      "chunkCount": 4
+    },
+    {
+      "title": "武汉理工大学图书馆使用指南",
+      "category": "学校概况",
+      "docId": "doc_156fcd418dd2abb5e65434c73ee244dd",
+      "legacyId": "doc_8c93e1c2-b199-4f42-9f9f-803d73be738e",
+      "chunkCount": 3
+    },
+    {
+      "title": "武汉理工大学奖学金与资助政策指南",
+      "category": "学校概况",
+      "docId": "doc_5ce90d24ceb28316b8e5d8b605af2901",
+      "legacyId": "doc_7c644dd4-d3ff-4942-bd51-d71322da7c53",
+      "chunkCount": 3
+    },
+    {
+      "title": "武汉理工大学宿舍生活指南",
+      "category": "学校概况",
+      "docId": "doc_1fb7d11d8b660a9a32e9ee7b1fe9b226",
+      "legacyId": "doc_859d5ae8-7758-4194-9941-8eeca227bca3",
+      "chunkCount": 3
+    },
+    {
+      "title": "武汉理工大学校园资料手册",
+      "category": "学校概况",
+      "docId": "doc_a69b98e5119f694cb5cd5c73a1c56393",
+      "legacyId": "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c",
+      "chunkCount": 12
+    },
+    {
+      "title": "武汉理工大学社团活动指南",
+      "category": "学校概况",
+      "docId": "doc_5104a621bf371da5001b53829877a20a",
+      "legacyId": "doc_ccb381bc-e016-45d2-9233-10896f6b4738",
+      "chunkCount": 2
+    },
+    {
+      "title": "武汉理工大学食堂美食指南",
+      "category": "学校概况",
+      "docId": "doc_1cecc47eb67120e8c67745855f555005",
+      "legacyId": "doc_d3bca967-2f9c-4a15-a5d1-3d177ea96da0",
+      "chunkCount": 4
+    },
+    {
+      "title": "CodeTop60_面试复习",
+      "category": "面试刷题",
+      "docId": "doc_fb78f4c97e1be296c218a98c3cc2632a",
+      "legacyId": "doc_ac1f7d77-c592-4611-9512-3bc92fe7bae4",
+      "chunkCount": 60
+    },
+    {
+      "title": "前端高频面试题整理",
+      "category": "面试刷题",
+      "docId": "doc_74ca607e602b6e30a4323401effadbb4",
+      "legacyId": "doc_5866488b-59f8-47b7-a98d-ee3cf63bdf9f",
+      "chunkCount": 13
+    }
+  ]
+}
