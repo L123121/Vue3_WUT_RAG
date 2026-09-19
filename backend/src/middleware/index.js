@@ -17,7 +17,9 @@ function applyMiddleware(app) {
   app.use((req, res, next) => {
     // HTTP 根 span：OTel 启用时包住整个请求（fn 内异步链共享 span 上下文），
     // 关闭时直通；traceId 优先上游头，否则在 OTel 启用时采用 OTel traceId（两边同源）
-    withHttpRootSpan(req, res, ({ otelTraceId } = {}) => {
+    // 注意 withHttpRootSpan 关闭时按契约回传 null，解构默认值对 null 不生效
+    withHttpRootSpan(req, res, (spanInfo) => {
+      const otelTraceId = spanInfo && spanInfo.otelTraceId;
       const incomingTraceId = req.get('x-trace-id') || req.get('x-request-id');
       const traceId = sanitizeTraceId(incomingTraceId) || otelTraceId || createTraceId('req');
       req.traceId = traceId;
@@ -51,7 +53,7 @@ function applyMiddleware(app) {
   if (isProduction) {
     const origin = process.env.CORS_ORIGIN;
     if (!origin) {
-      console.error('[CORS] 生产环境未配置 CORS_ORIGIN，拒绝启动。请在环境变量中设置允许的前端域名。');
+      logEvent('error', 'cors_origin_missing', { message: '生产环境未配置 CORS_ORIGIN，拒绝启动。请在环境变量中设置允许的前端域名。' });
       process.exit(1);
     }
     corsOrigin = origin.split(',').map(s => s.trim()).filter(Boolean);
