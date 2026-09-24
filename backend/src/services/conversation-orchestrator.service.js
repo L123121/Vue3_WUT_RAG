@@ -16,24 +16,135 @@ class ConversationOrchestrator {
     this.intentRouter = dependencies.intentRouter || new IntentRouter(this.aiService);
     this.agentService = dependencies.agentService || new AgentService(this.aiService);
     this.agenticRagService = dependencies.agenticRagService || null;
+    this.decisionModel = dependencies.decisionModel || null;
     this.intentRoutingEnabled = dependencies.intentRoutingEnabled
       ?? config.rag?.intentRoutingEnabled !== false;
   }
 
-  async routeIntent(message) {
+  async routeIntent(message, context = {}, history = []) {
     if (!this.intentRoutingEnabled) return null;
+
+    let mode = this.decisionModel?.mode || this.decisionModel?.getMode?.() || "off";
     try {
-      return await this.intentRouter.route(message);
+      // 明确命中零成本高置信规则时不调用 Jev，保护首包延迟和成本。
+      const quickRoute = typeof this.intentRouter.fastRoute === "function"
+        ? this.intentRouter.fastRoute(message)
+        : null;
+      if (quickRoute) {
+        logEvent("info", "intent_route", { via: "fast", intent: quickRoute.intent, route: quickRoute.route });
+        return quickRoute;
+      }
+
+      mode = this.decisionModel?.mode || this.decisionModel?.getMode?.() || "off";
+      const shouldEvaluate = this.decisionModel?.shouldEvaluate?.({
+        runId: context.runId,
+        traceId: context.traceId,
+      }) === true;
+      if (!shouldEvaluate || mode === "off") return await this.intentRouter.route(message);
+
+      if (mode === "shadow") {
+        const baseline = await this.intentRouter.route(message);
+        void this._runJevShadow({ message, history, context, baseline });
+        return baseline;
+      }
+
+      if (mode === "canary") {
+        const [baselineResult, decisionResult] = await Promise.allSettled([
+          this.intentRouter.route(message),
+          this.decisionModel.decideRoute({ message, history, signal: context.signal, traceId: context.traceId }),
+        ]);
+        if (decisionResult.status === "fulfilled") {
+          const baseline = baselineResult.status === "fulfilled" ? baselineResult.value : null;
+          return this._applyJevDecision(decisionResult.value, mode, baseline);
+        }
+        if (baselineResult.status === "fulfilled") {
+          return this._markJevFallback(baselineResult.value, mode, decisionResult.reason);
+        }
+        throw decisionResult.reason || baselineResult.reason;
+      }
+
+      const decision = await this.decisionModel.decideRoute({
+        message,
+        history,
+        signal: context.signal,
+        traceId: context.traceId,
+      });
+      return this._applyJevDecision(decision, mode, null);
     } catch (err) {
-      logEvent("warn", "conversation_intent_route_failed", { error: err.message });
-      return null;
+      logEvent("warn", "conversation_jev_fallback", {
+        code: err.code || "JEV_DECISION_FAILED",
+        error: err.message,
+      });
+      try {
+        const baseline = await this.intentRouter.route(message);
+        return this._markJevFallback(baseline, mode, err);
+      } catch (baselineError) {
+        logEvent("warn", "conversation_intent_route_failed", { error: baselineError.message });
+        return null;
+      }
     }
+  }
+
+  async _runJevShadow({ message, history, context, baseline }) {
+    try {
+      const candidate = await this.decisionModel.decideRoute({
+        message,
+        history,
+        signal: context.signal,
+        traceId: context.traceId,
+        enforceConfidence: false,
+      });
+      logEvent("info", "jev_shadow_decision", {
+        traceId: context.traceId,
+        baselineRoute: baseline?.route || null,
+        candidateRoute: candidate.route,
+        agreement: baseline?.route === candidate.route,
+        confidence: candidate.confidence,
+        decisionId: candidate.decision?.decisionId,
+      });
+    } catch (error) {
+      logEvent("warn", "jev_shadow_failed", {
+        traceId: context.traceId,
+        code: error.code || "JEV_DECISION_FAILED",
+        error: error.message,
+      });
+    }
+  }
+
+  _applyJevDecision(decision, mode, baseline) {
+    return {
+      ...decision,
+      decision: {
+        ...decision.decision,
+        mode,
+        applied: true,
+        baselineRoute: baseline?.route || null,
+        status: "applied",
+      },
+    };
+  }
+
+  _markJevFallback(baseline, mode, error) {
+    if (!baseline) return null;
+    return {
+      ...baseline,
+      decision: {
+        provider: "jev",
+        mode,
+        applied: false,
+        status: "fallback",
+        fallback: true,
+        fallbackReason: error?.code || "JEV_DECISION_FAILED",
+        error: String(error?.message || "Jev 决策失败").slice(0, 160),
+        baselineRoute: baseline.route || null,
+      },
+    };
   }
 
   async _prepare(message, history, context) {
     const safeHistory = Array.isArray(history) ? history : [];
     const [routing, memoryContext] = await Promise.all([
-      this.routeIntent(message),
+      this.routeIntent(message, context, safeHistory),
       this._readMemory(context.userId, message),
     ]);
     const enrichedHistory = memoryContext
@@ -53,8 +164,17 @@ class ConversationOrchestrator {
    */
   _agentFallbackRouting(routing) {
     const reason = "agent 链路失败，自动降级知识库检索";
+    const decision = routing?.decision
+      ? {
+        ...routing.decision,
+        status: "fallback",
+        applied: false,
+        fallback: true,
+        fallbackReason: "AGENT_FALLBACK",
+      }
+      : null;
     return routing
-      ? { ...routing, route: "rag", reason }
+      ? { ...routing, route: "rag", reason, ...(decision ? { decision } : {}) }
       : {
         intent: INTENT_TYPES.COMPLEX_TASK,
         confidence: 0,
@@ -91,15 +211,16 @@ class ConversationOrchestrator {
       route: routing.route,
       confidence: routing.confidence,
       reason: routing.reason,
+      ...(routing.decision ? { decision: routing.decision } : {}),
     };
   }
 
-  async _chatReply(message, history) {
+  async _chatReply(message, history, options = {}) {
     const systemPrompt = "你是一个友好的校园助手，名字叫\"武理小精灵\"，回答要简洁亲切。";
     const result = await this.aiService.getCompletion(message, [
       { role: "system", content: systemPrompt },
       ...history,
-    ]);
+    ], options);
     return {
       reply: result.content,
       isMock: !!result.isMock,
@@ -114,7 +235,7 @@ class ConversationOrchestrator {
     let result;
 
     if (prepared.route === "chat") {
-      result = await this._chatReply(message, prepared.history);
+      result = await this._chatReply(message, prepared.history, context);
     } else if (prepared.route === "rag" && this.agenticRagService?.enabled) {
       result = await this.agenticRagService.chat(message, prepared.history, context);
     } else if (prepared.route === "agent" && this.agentService.enabled) {
@@ -140,6 +261,9 @@ class ConversationOrchestrator {
     const prepared = await this._prepare(message, history, context);
     let fullReply = "";
 
+    if (prepared.routing?.decision) {
+      yield { type: "decision", decision: prepared.routing.decision };
+    }
     if (prepared.routing) {
       yield { type: "intent", intent: this._intentResult(prepared.routing) };
     }

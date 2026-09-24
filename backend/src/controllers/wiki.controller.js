@@ -34,6 +34,18 @@ const getEntry = async (req, res, next) => {
   }
 };
 
+const getEntryRevisions = async (req, res, next) => {
+  try {
+    const docId = req.params.docId;
+    const entry = await wikiService.getEntry(docId, { privileged: isPrivileged(req) });
+    if (!entry) return errorResponse(res, '词条不存在或尚未上架', 404);
+    successResponse(res, { docId, stale: entry.stale, revisions: await wikiService.getRevisionHistory(docId) }, '获取成功');
+  } catch (error) {
+    logEvent('error', 'wiki_revisions_failed', { error: error.message, id: req.params.docId, stack: error.stack });
+    next(error);
+  }
+};
+
 const setEntryVisibility = async (req, res, _next) => {
   try {
     const { docId } = req.params;
@@ -52,4 +64,20 @@ const setEntryVisibility = async (req, res, _next) => {
   }
 };
 
-module.exports = { listEntries, getEntry, setEntryVisibility };
+// 手动重算互链：编译期产物默认只在上架时异步触发，LLM 失败或候选池变化后
+// 管理员可用这个接口显式重算，不必靠反复切换上下架来间接触发
+const recompileEntryRelations = async (req, res, next) => {
+  try {
+    const { docId } = req.params;
+    const meta = await wikiService.getMeta(docId);
+    if (!meta?.visible) return errorResponse(res, '词条未上架，无法重算互链', 409);
+    await wikiService.compileRelatedPages(docId);
+    const entry = await wikiService.getEntry(docId, { privileged: true });
+    successResponse(res, { docId, relatedPages: entry?.relatedPages || [] }, '互链已重新梳理');
+  } catch (error) {
+    logEvent('error', 'wiki_relation_recompile_failed', { error: error.message, id: req.params.docId, stack: error.stack });
+    next(error);
+  }
+};
+
+module.exports = { listEntries, getEntry, getEntryRevisions, setEntryVisibility, recompileEntryRelations };

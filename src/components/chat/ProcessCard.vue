@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { CheckCircle2, Circle, MapPin, Clock, ListChecks, ClipboardList, AlertCircle, FileText } from 'lucide-vue-next';
 
 /**
@@ -20,8 +20,8 @@ const toggleStep = (index) => {
   checked.value = next;
 };
 
-const steps = props.card?.steps || [];
-const materials = props.card?.materials || [];
+const steps = computed(() => (Array.isArray(props.card?.steps) ? props.card.steps : []));
+const materials = computed(() => (Array.isArray(props.card?.materials) ? props.card.materials : []));
 </script>
 
 <template>

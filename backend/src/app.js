@@ -78,6 +78,8 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
   try {
     const { startUploadsCleanup } = require('./services/file-upload.service');
     startUploadsCleanup();
+    const { startSpillCleanup } = require('./services/context-compaction.service');
+    startSpillCleanup();
   } catch (err) {
     logEvent('warn', 'upload_dir_cleanup_start_failed', { message: '上传目录清理任务启动失败', error: err.message });
   }
@@ -96,6 +98,7 @@ async function shutdown(signal, exitCode = 0) {
     logEvent('warn', 'vector_store_persist_failed', { message: '向量数据落盘失败', error: error.message });
   }
   operationalMetrics.flush();
+  try { require('./services/context-compaction.service').stopSpillCleanup(); } catch { /* 清理器未启动时忽略 */ }
   await shutdownTracing();
   server.close(() => {
     operationalMetrics.close();

@@ -47,6 +47,36 @@ describe('AiService._parseStream 原生 function calling', () => {
     expect(done.tool_calls).toBeNull();
   });
 
+  it('上游提前 EOF 且没有 [DONE] 时拒绝为不完整流', async () => {
+    const svc = makeService();
+    const res = makeFakeRes([
+      'data: {"choices":[{"delta":{"content":"半截回答"}}]}\n\n',
+    ]);
+    const consume = async () => {
+      const chunks = [];
+      for await (const chunk of svc._parseStream(res, provider, {})) chunks.push(chunk);
+      return chunks;
+    };
+
+    await expect(consume()).rejects.toMatchObject({
+      name: 'IncompleteStreamError',
+      code: 'INCOMPLETE_STREAM',
+      retryable: true,
+    });
+  });
+
+  it('处理切开的 UTF-8 字节、JSON 和无换行尾部 [DONE]', async () => {
+    const svc = makeService();
+    const payload = Buffer.from('data: {"choices":[{"delta":{"content":"武汉"}}]}\n\ndata: [DONE]', 'utf8');
+    const splitAt = payload.indexOf(Buffer.from('汉', 'utf8')) + 1;
+    const res = makeFakeRes([payload.subarray(0, splitAt), payload.subarray(splitAt, splitAt + 1), payload.subarray(splitAt + 1)]);
+    const chunks = [];
+    for await (const chunk of svc._parseStream(res, provider, {})) chunks.push(chunk);
+
+    expect(chunks.map((chunk) => chunk.content).join('')).toBe('武汉');
+    expect(chunks.at(-1)).toMatchObject({ done: true });
+  });
+
   it('增量拼接 delta.tool_calls（跨分片 name/arguments）', async () => {
     const svc = makeService();
     const res = makeFakeRes([
@@ -88,6 +118,52 @@ describe('AiService._parseStream 原生 function calling', () => {
     const tcs = chunks[chunks.length - 1].tool_calls;
     expect(tcs).toHaveLength(1);
     expect(tcs[0].function.arguments).toBe('{}');
+  });
+});
+
+describe('RequestQueue 背压与取消', () => {
+  it('排队中的请求可被 AbortSignal 移除，不占用 pending', async () => {
+    const { RequestQueue } = require('../src/services/ai.service');
+    const queue = new RequestQueue(1, { maxPending: 2, waitTimeoutMs: 1000 });
+    const release = await queue.acquire();
+    const controller = new AbortController();
+    const waiting = queue.acquire(controller.signal);
+
+    expect(queue.pending).toBe(1);
+    controller.abort();
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError', code: 'CLIENT_ABORTED' });
+    expect(queue.pending).toBe(0);
+    release();
+    expect(queue.running).toBe(0);
+  });
+
+  it('超过等待上限返回可重试的 503 错误', async () => {
+    const { RequestQueue } = require('../src/services/ai.service');
+    const queue = new RequestQueue(1, { maxPending: 1, waitTimeoutMs: 1000 });
+    const release = await queue.acquire();
+    const waiting = queue.acquire();
+
+    await expect(queue.acquire()).rejects.toMatchObject({
+      code: 'LLM_QUEUE_FULL',
+      statusCode: 503,
+      retryable: true,
+    });
+    release();
+    const secondRelease = await waiting;
+    secondRelease();
+  });
+
+  it('排队超时后释放 waiter，不留下悬挂队列', async () => {
+    const { RequestQueue } = require('../src/services/ai.service');
+    const queue = new RequestQueue(1, { maxPending: 1, waitTimeoutMs: 10 });
+    const release = await queue.acquire();
+
+    await expect(queue.acquire()).rejects.toMatchObject({
+      code: 'LLM_QUEUE_TIMEOUT',
+      statusCode: 503,
+    });
+    expect(queue.pending).toBe(0);
+    release();
   });
 });
 

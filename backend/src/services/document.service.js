@@ -25,6 +25,17 @@ class DocumentService {
     this._providerRegistered = false;
   }
 
+  _markCorpusChanged(reason, docId) {
+    const { bumpCorpusVersion } = require('./corpus-version.service');
+    const version = bumpCorpusVersion({ reason, docId });
+    try {
+      require('./rag-retrieval.service').invalidateRetrievalCaches();
+    } catch (error) {
+      logEvent('warn', 'rag_cache_invalidation_failed', { reason, docId, version, error: error.message });
+    }
+    return version;
+  }
+
   // 延迟获取 IndexingService（首次用时才 require）
   get indexingService() {
     if (!this._indexing) {
@@ -220,6 +231,7 @@ class DocumentService {
     } catch (err) {
       logEvent('warn', 'document_stale_vectors_cleanup_failed', { docId, error: err.message });
     }
+    this._markCorpusChanged('document_upsert', docId);
 
     const indexPromise = this.indexingService.indexDocument(docId, title, content, category)
       .then(async indexedChunkCount => {
@@ -318,6 +330,15 @@ class DocumentService {
 
     await this.store.del(`document:${docId}`);
     await this.store.srem('documents:all', docId);
+    if (typeof this.store.hget === 'function' && typeof this.store.hdel === 'function') {
+      try {
+        const { WikiService } = require('./wiki.service');
+        await new WikiService({ store: this.store, documentService: this }).removeDocumentMetadata(docId);
+      } catch (error) {
+        logEvent('warn', 'wiki_metadata_cleanup_failed', { docId, error: error.message });
+      }
+    }
+    this._markCorpusChanged('document_delete', docId);
 
     return { message: '文档删除成功', docId };
   }

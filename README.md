@@ -16,7 +16,7 @@
 - **自动意图路由**：后端自动决定进入 `chat`、`rag` 或 `agent`，前端无需手动切换 RAG。
 - **RAG 知识库**：支持文档上传、批量录入、两级分类、统计、重索引、来源引用和反馈。
 - **校园百科**：知识库文档的上架阅读视图（`/wiki`），默认不上架、管理员逐条放开，演示用虚构语料按治理规则禁止上架；分类树、目录锚点、标题与正文搜索、可读 slug 链接，并与对话来源引用双向跳转。
-- **Agent 工具调用**：内置知识库检索 `search_knowledge_base` 与数学计算 `calculate`。
+- **Agent 工具调用**：内置知识库检索 `search_knowledge_base`、受控工件读取 `read_tool_artifact` 与数学计算 `calculate`；大结果可按需读取。
 - **文件对话与 OCR**：支持图片、PDF、DOCX、PPTX、TXT、Markdown；扫描件和图片可走视觉 OCR。
 - **会话管理**：创建、切换、重命名、删除、重试、编辑重发、任意消息分叉新会话、收藏和后端持久化。
 - **公开分享**：登录用户可生成只读分享快照，访问 `/share/:code` 无需登录。
@@ -29,10 +29,10 @@
 - httpOnly JWT Cookie 鉴权，支持注册、登录、退出和修改密码。
 - SQLite WAL 持久化存储（唯一实现）。
 - Qdrant 唯一向量后端。
-- Helmet、CORS 白名单、接口限流、用户配额和上传文件 MIME 校验。
+- Helmet、CORS 白名单、接口限流、用户配额、私有附件归属鉴权和上传文件 MIME 校验。
 - 工具参数 Schema 校验、超时取消、客户端断开传播、循环检测与失败降级。
-- 前端流式渲染用 requestAnimationFrame 合并高频增量更新，后台 Tab 暂停 RAF 时立即落盘待写内容；发版后旧页面的 chunk 加载失败可自动识别并恢复。
-- RAG 全链路可观测：traceId 贯穿 embedding、检索、重排、父段组装、生成、grounding 各阶段并记录耗时，trace 随 SSE 下发，前端面板可视化。
+- 前端流式渲染用 requestAnimationFrame 合并高频增量更新，后台 Tab 暂停 RAF 时立即落盘待写内容；发版后旧页面的 chunk 加载失败可自动识别并恢复；Markdown Worker 以低频采样上报队列、耗时和过期结果。
+- RAG 全链路可观测：traceId 贯穿 embedding、检索、重排、父段组装、生成、grounding 各阶段并记录耗时；RunEvent v1 支持序号/终态、管理员 JSONL 回放和运行级完成率/P95/工具/降级指标。
 - Embedding 与 Reranker 为本地 ONNX BGE 模型（离线加载，可选 int8 量化，向量内存约省 75%），除生成环节外 RAG 链路零模型 API 调用。
 - 语义缓存：精确缓存 miss 后按查询向量余弦相似度（默认 ≥0.95）复用近义问题的检索候选池，省一次向量库往返（`RAG_SEMANTIC_CACHE_ENABLED` 开启）。
 - 增量重索引：重索引时按 chunk 内容 hash 对齐，未变段落直接复用已有向量，只重算新增/变化部分。
@@ -147,20 +147,25 @@ docId 由 `backend/src/utils/doc-id.js` 从 **(标题, 类别)** 确定性派生
 | --- | --- | --- |
 | `GET` | `/api/health` | 服务健康检查 |
 | `POST` | `/api/stream` | 主 SSE 会话接口 |
-| `POST` | `/api/chat/upload` | 登录用户上传聊天文件 |
+| `POST` | `/api/chat/upload` | 登录用户上传私有聊天附件，返回带用户/会话归属的 `attachmentId` |
+| `GET` | `/api/chat/attachments/:attachmentId` | 当前用户受控读取私有附件 |
 | `POST` | `/api/auth/register` | 注册并写入认证 Cookie |
 | `POST` | `/api/auth/login` | 登录并写入认证 Cookie |
 | `GET` | `/api/auth/me` | 获取当前用户 |
 | `GET` | `/api/conversations` | 会话列表与持久化接口 |
 | `GET` | `/api/rag/documents` | 查看知识库文档 |
 | `POST` | `/api/rag/documents/upload` | 管理员上传知识库文档 |
-| `POST` | `/api/rag/documents/reindex` | 管理员重建索引；`mode=incremental` 走内容 hash 增量 diff，未变段落复用向量 |
+| `POST` | `/api/rag/documents/reindex` | 管理员重建索引；`mode=incremental` 走内容 hash 增量 diff，未变段落复用向量，任务互斥 |
 | `GET` | `/api/wiki/entries` | 百科词条列表（默认仅已上架；`q` 匹配标题/分类/正文，`includeHidden` 仅管理员） |
-| `GET` | `/api/wiki/entries/:idOrSlug` | 百科词条正文，服务端已完成 front-matter 解析与来源标注 |
+| `GET` | `/api/wiki/entries/:idOrSlug` | 百科词条正文，服务端已完成 front-matter 解析、来源修订与漂移标注 |
+| `GET` | `/api/wiki/entries/:docId/revisions` | 管理员查看词条来源修订历史 |
 | `PUT` | `/api/wiki/entries/:docId/visibility` | 管理员上下架；演示用模拟语料默认返回 409 拒绝上架 |
 | `POST` | `/api/share` | 创建分享快照 |
 | `GET` | `/api/share/:code` | 公开读取分享快照 |
-| `GET` | `/api/memory` | 用户记忆接口 |
+| `GET` | `/api/metrics/runs/:runId/events` | 管理员读取已开启的 RunEvent JSONL 回放 |
+| `POST` | `/api/metrics/client-performance` | 登录用户低频上报 Markdown Worker 汇总性能 |
+| `POST` | `/api/rag/documents/reindex` | 管理员重建索引；`mode=incremental` 走内容 hash 增量 diff，任务互斥 |
+| `GET` | `/api/memory` | 当前未注册公开路由；记忆由会话编排层内部使用 |
 
 ## 快速开始
 
@@ -269,6 +274,7 @@ RAG 与 Agent 评测脚本位于 `scripts/rag-eval/`，主要数据集位于 `sc
 | `INTENT_ROUTING_ENABLED` | `true` | 启用自动路由 |
 | `INTENT_CLASSIFY_ENABLED` | `false` | 启用 LLM 意图分类兜底 |
 | `AGENT_TOOL_ENABLED` | `true` | 启用 Agent 工具调用 |
+| `AGENT_CONTEXT_COMPACTION` | `true` | 大工具结果落盘并按需读取 |
 | `AGENT_MAX_TOOL_ROUNDS` | `2` | 最大工具调度轮数 |
 | `AGENT_DECIDE_TIMEOUT_MS` | `15000` | Agent 决策超时 |
 | `AGENT_TOOL_TIMEOUT_MS` | `15000` | Agent 工具执行总超时 |
@@ -292,11 +298,20 @@ RAG 与 Agent 评测脚本位于 `scripts/rag-eval/`，主要数据集位于 `sc
 | `RAG_MIN_SOURCE_SCORE` | `0.03` | 可靠来源最低分数 |
 | `RAG_MMR_ENABLED` | `true` | 启用父段 MMR 去重 |
 | `RAG_SEMANTIC_CACHE_ENABLED` | `false` | 语义缓存：近义问题按向量相似度复用检索候选池 |
+| `RAG_WIKI_FIRST_ENABLED` | `true` | 启用已上架且未漂移的 Wiki 词条检索 |
+| `RAG_WIKI_HYBRID_ENABLED` | `true` | Wiki 命中时是否与 Qdrant 候选合并；关闭可回退 Wiki 短路 |
+| `RAG_WIKI_FIRST_MAX_ENTRIES` | `3` | Wiki 导航最多注入的词条数量 |
 
 ### 可选能力
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
+| `LLM_CONCURRENCY` | `3` | 同时执行的模型请求数 |
+| `LLM_MAX_PENDING` | `20` | LLM 最大排队请求数，超限返回 503 |
+| `LLM_QUEUE_TIMEOUT_MS` | `15000` | 排队等待超时 |
+| `METRICS_PROMETHEUS_ENABLED` | `false` | 是否开启 Prometheus 抓取端点 |
+| `RUN_EVENT_LOG_ENABLED` | `false` | 是否写入 RunEvent JSONL 回放日志 |
+| `RUN_EVENT_LOG_INCLUDE_CONTENT` | `false` | 回放日志是否保留回答正文；默认仅保留诊断元数据 |
 | `AI_FALLBACK_API_KEY` | 空 | 主模型失败时的备用 Provider |
 | `AI_ENABLE_THINKING` | `false` | 是否开启模型思考模式 |
 | `JUDGE_API_KEY` | `AI_API_KEY` | LLM-as-judge 独立 Key |
@@ -308,7 +323,7 @@ RAG 与 Agent 评测脚本位于 `scripts/rag-eval/`，主要数据集位于 `sc
 | `ADMIN_PASSWORD` | 随机生成 | 生产环境应显式设置 |
 | `QUOTA_DAILY_LIMIT` | `100` | 普通用户每日调用额度 |
 | `QUOTA_ANONYMOUS_LIMIT` | `20` | 匿名额度 |
-| `QUOTA_ADMIN_LIMIT` | `1000` | 管理员额度 |
+| 管理员额度 | 无限制 | 管理员请求由 `quotaMiddleware` 跳过每日配额；不存在 `QUOTA_ADMIN_LIMIT` 配置 |
 
 完整模板见 `backend/.env.example` 与 `deploy/.env.production.example`。
 
@@ -320,7 +335,7 @@ RAG 与 Agent 评测脚本位于 `scripts/rag-eval/`，主要数据集位于 `sc
 | --- | --- | --- |
 | 用户、会话、分享、反馈、配额 | SQLite WAL | `/app/backend/data/store.db`，`backend-data` volume |
 | 向量索引 | Qdrant 1.12.5 | `/qdrant/storage`，`qdrant-storage` volume |
-| 上传文件 | 本地目录 | `/app/backend/uploads`，`uploads-data` volume |
+| 上传文件 | 本地目录 + SQLite 归属元数据 | `/app/backend/uploads`，`uploads-data` volume；聊天附件按用户/会话授权并默认 7 天过期 |
 | 知识库源文件 | `ragdata/` | 只读挂载到 `/app/ragdata` |
 | Embedding / Reranker 模型 | `.model-cache/` | 只读挂载到 `/app/.model-cache` |
 

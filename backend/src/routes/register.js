@@ -12,6 +12,7 @@ function applyRoutes(app, chatLimiter) {
   const { streamHandler } = require('../controllers/chat.controller');
   const { speechHandler } = require('../controllers/audio.controller');
   const { chatUpload, parseFile } = require('../services/file-upload.service');
+  const { attachmentService } = require('../services/attachment.service');
   const { requireAuth } = require('../middleware/auth.middleware');
   const { router: authRoutes } = require('./auth.routes');
   const { router: metricsRoutes } = require('./metrics.routes');
@@ -57,6 +58,8 @@ function applyRoutes(app, chatLimiter) {
   app.use('/api/metrics', metricsRoutes);
 
   // 子路由（RAG、评测、工具、记忆）
+  // 直连 RAG 也属于高成本聊天入口，与 /api/stream 共用请求级限流。
+  app.use('/api/rag/chat', chatLimiter);
   app.use('/api', apiRoutes);
 
   // SSE 流式聊天
@@ -89,34 +92,80 @@ function applyRoutes(app, chatLimiter) {
         textContent = textContent.toString('utf8');
       }
 
+      const attachment = await attachmentService.create({
+        ownerUserId: req.userId,
+        conversationId: req.body?.conversationId,
+        storageName: file.filename,
+        originalName,
+        mimetype: file.mimetype,
+        size: file.size,
+        isImage,
+      });
+
       res.json({
         success: true,
         data: {
-          url: `/uploads/${file.filename}`,
-          name: originalName,
-          type: file.mimetype,
-          size: file.size,
+          attachmentId: attachment.id,
+          url: `/api/chat/attachments/${attachment.id}${attachment.conversationId ? `?conversationId=${encodeURIComponent(attachment.conversationId)}` : ''}`,
+          name: attachment.originalName,
+          type: attachment.mimetype,
+          size: attachment.size,
           textContent,
-          isImage,
+          isImage: attachment.isImage,
+          expiresAt: attachment.expiresAt,
         }
       });
     } catch (error) {
+      if (req.file?.path) {
+        try { require('fs').unlinkSync(req.file.path); } catch { /* 清理失败由定期任务兜底 */ }
+      }
       logEvent('error', 'chat_upload_failed', { error: error.message, stack: error.stack });
       res.status(500).json({ success: false, error: '文件上传失败' });
     }
   });
 
-  // 上传目录静态资源（仅登录用户可访问，防止文件 URL 泄露后匿名下载）
+  // 私有附件下载：资源必须属于当前用户，且不允许公共/代理缓存。
   const uploadStaticDir = path.join(__dirname, '../../uploads');
-  const inlineImageExtensions = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
-  app.use('/uploads', requireAuth, express.static(uploadStaticDir, {
-    setHeaders: (res, filePath) => {
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      if (!inlineImageExtensions.has(path.extname(filePath).toLowerCase())) {
-        res.setHeader('Content-Disposition', 'attachment');
-      }
-    },
-  }));
+  const sendPrivateAttachment = async (req, res, attachment) => {
+    if (!attachment || !attachmentService.canRead(attachment, {
+      userId: req.userId,
+      conversationId: req.query?.conversationId,
+    })) {
+      return res.status(404).json({ success: false, error: '附件不存在或无权访问' });
+    }
+
+    const filePath = attachmentService.getAttachmentPath(attachment);
+    if (!filePath) return res.status(404).json({ success: false, error: '附件不存在' });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Type', attachment.mimetype || 'application/octet-stream');
+    if (!attachment.isImage) {
+      const safeName = String(attachment.originalName || 'attachment').replace(/[\r\n"\\]/g, '_');
+      res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+    }
+    return res.sendFile(path.basename(filePath), { root: uploadStaticDir }, (error) => {
+      if (error && !res.headersSent) res.status(error.statusCode || 404).json({ success: false, error: '附件不存在' });
+    });
+  };
+
+  app.get('/api/chat/attachments/:attachmentId', requireAuth, async (req, res, next) => {
+    try {
+      const attachment = await attachmentService.getById(req.params.attachmentId);
+      await sendPrivateAttachment(req, res, attachment);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // 兼容新附件在旧消息中保存的存储名 URL；没有归属元数据的旧文件不再开放。
+  app.get('/uploads/:storageName', requireAuth, async (req, res, next) => {
+    try {
+      const attachment = await attachmentService.getByStorageName(req.params.storageName);
+      await sendPrivateAttachment(req, res, attachment);
+    } catch (error) {
+      next(error);
+    }
+  });
 
   // 生产环境托管前端
   if (isProduction) {

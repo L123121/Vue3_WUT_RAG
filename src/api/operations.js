@@ -9,3 +9,8 @@ export const createKnowledgeTask = async (payload) => {
   const response = await apiPost('/metrics/risk-audit/tasks', payload);
   return response.json();
 };
+
+export const getRunEvents = async (runId) => {
+  const response = await apiGet(`/metrics/runs/${encodeURIComponent(runId)}/events`);
+  return response.json();
+};

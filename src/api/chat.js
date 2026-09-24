@@ -9,6 +9,12 @@ const STREAM_STALL_TIMEOUT = 60000; // 60s without data = stalled
 const RESPONSE_HEADERS_TIMEOUT = 30000; // 建连后迟迟不出响应头的兜底（响应后的慢数据由 stallCheck 负责）
 
 import { fetchOpts } from './client.js';
+import {
+  isRunEventV1,
+  RUN_EVENT_TYPES,
+  RUN_EVENT_VERSION,
+  TERMINAL_RUN_EVENT_TYPES,
+} from '../utils/runEvents.js';
 
 // 流式热路径日志仅在开发环境输出（生产构建每 chunk 打日志会卡 DevTools）
 const debug = (...args) => {
@@ -123,13 +129,23 @@ export const sendMessageStream = async (message, history = [], callbacks, option
   // TTFT 埋点：记录 fetch 发起时刻
   const ttftStart = performance.now();
   let ttftMeasured = false;
+  const streamVersion = options.streamVersion ?? RUN_EVENT_VERSION;
+  const runId = options.runId || null;
+  const requestBody = {
+    message,
+    history,
+    conversationId,
+    files: options.files || [],
+    ...(streamVersion >= RUN_EVENT_VERSION ? { streamVersion, attempt } : {}),
+    ...(runId ? { runId } : {}),
+  };
 
-  debug('[Stream] fetch:', `${API_URL}/stream`, 'attempt:', attempt);
+  debug('[Stream] fetch:', `${API_URL}/stream`, 'attempt:', attempt, 'runId:', runId);
   try {
     const response = await fetch(`${API_URL}/stream`, {
       ...fetchOpts,
       method: 'POST',
-      body: JSON.stringify({ message, history, conversationId, files: options.files || [] }),
+      body: JSON.stringify(requestBody),
       signal,
     });
     // 响应头已到，超时闸门使命完成；之后的慢数据归 stallCheck 管
@@ -151,27 +167,34 @@ export const sendMessageStream = async (message, history = [], callbacks, option
     const decoder = new TextDecoder('utf-8');
     let buffer = '';
     let lastDataTime = Date.now();
+    let receivedRunEvent = false;
+    let terminalRunEvent = false;
 
-    // 包装 onChunk，首次调用时打 TTFT（meta 携带 decision 标记等事件元数据）
+    // 包装内容事件，v0 的 content 与 v1 的 message.delta 都需使用同一 TTFT 口径。
+    const recordFirstChunk = () => {
+      if (ttftMeasured) return;
+      ttftMeasured = true;
+      const ttftMs = Math.round(performance.now() - ttftStart);
+      debug(`[TTFT] 首字响应延迟: ${ttftMs}ms`);
+      try {
+        const key = 'ttft_measurements';
+        const arr = JSON.parse(localStorage.getItem(key) || '[]');
+        arr.push({ ts: Date.now(), ttft: ttftMs, attempt, msg: message.substring(0, 30) });
+        while (arr.length > 100) arr.shift();
+        localStorage.setItem(key, JSON.stringify(arr));
+      } catch {}
+    };
     const originalOnChunk = callbacks.onChunk;
     const measuredOnChunk = (content, meta) => {
-      if (!ttftMeasured) {
-        ttftMeasured = true;
-        const ttftMs = Math.round(performance.now() - ttftStart);
-        debug(`[TTFT] 首字响应延迟: ${ttftMs}ms`);
-        // 存到 localStorage，方便批量分析
-        try {
-          const key = 'ttft_measurements';
-          const arr = JSON.parse(localStorage.getItem(key) || '[]');
-          arr.push({ ts: Date.now(), ttft: ttftMs, attempt, msg: message.substring(0, 30) });
-          // 只保留最近 100 条
-          while (arr.length > 100) arr.shift();
-          localStorage.setItem(key, JSON.stringify(arr));
-        } catch {}
-      }
-      originalOnChunk(content, meta);
+      if (content) recordFirstChunk();
+      originalOnChunk?.(content, meta);
     };
-    const measuredCallbacks = { ...callbacks, onChunk: measuredOnChunk };
+    const originalOnEvent = callbacks.onEvent;
+    const measuredOnEvent = (event) => {
+      if (event?.type === RUN_EVENT_TYPES.MESSAGE_DELTA && event.data?.content) recordFirstChunk();
+      originalOnEvent?.(event);
+    };
+    const measuredCallbacks = { ...callbacks, onChunk: measuredOnChunk, onEvent: measuredOnEvent };
 
     // Stall detection timer。
     // finished 防止二次收敛：stall 触发的 reader.cancel() 会让挂起的 read() 以 done 结束，
@@ -193,8 +216,15 @@ export const sendMessageStream = async (message, history = [], callbacks, option
         debug('[Stream] reader.read() done:', done, 'value length:', value?.length);
         if (done) {
           clearInterval(stallCheck);
-          debug('[Stream] stream ended (done=true), calling onDone');
-          if (!finished) measuredCallbacks.onDone();
+          debug('[Stream] stream ended (done=true)');
+          if (!finished) {
+            if (receivedRunEvent && !terminalRunEvent) {
+              finished = true;
+              measuredCallbacks.onError(new Error('运行流在收到终态前意外结束'));
+            } else {
+              measuredCallbacks.onDone();
+            }
+          }
           break;
         }
 
@@ -220,6 +250,27 @@ export const sendMessageStream = async (message, history = [], callbacks, option
 
           try {
             const json = JSON.parse(data);
+
+            if (isRunEventV1(json)) {
+              receivedRunEvent = true;
+              debug('[Stream] RunEvent:', json.type, 'seq:', json.seq, 'runId:', json.runId);
+              if (typeof measuredCallbacks.onEvent === 'function') {
+                measuredCallbacks.onEvent(json);
+              } else if (json.type === RUN_EVENT_TYPES.RUN_FAILED) {
+                measuredCallbacks.onError(new Error(json.data?.message || '运行失败'));
+              }
+
+              if (TERMINAL_RUN_EVENT_TYPES.has(json.type)) {
+                terminalRunEvent = true;
+                finished = true;
+                clearInterval(stallCheck);
+                // v1 的 run.completed/run.failed 是唯一终态；主动释放响应体，
+                // 防止服务端异常迟迟不关闭连接而再次触发 EOF 回调。
+                reader.cancel().catch(() => {});
+                return;
+              }
+              continue;
+            }
 
             // 兼容两种流式格式：
             //   {"content":"..."}              — 标准格式
@@ -312,9 +363,10 @@ export const sendMessageStream = async (message, history = [], callbacks, option
 };
 
 // Streaming message with stall detection
-export const uploadChatFile = async (file) => {
+export const uploadChatFile = async (file, conversationId = null) => {
   const formData = new FormData();
   formData.append('file', file);
+  if (conversationId) formData.append('conversationId', conversationId);
 
   // 不能传 fetchOpts（它带了 application/json 头），FormData 必须由浏览器自动设置 multipart/form-data
   const response = await fetch(`${API_URL}/chat/upload`, {

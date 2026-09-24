@@ -178,6 +178,63 @@ describe('useStreaming 状态机', () => {
     await promise;
   });
 
+  it('旧 run 的迟到回调不会清空新 run 的状态或写入新消息', async () => {
+    const store = setup();
+    const firstPromise = api.sendMessage('第一问');
+    const firstCallbacks = capturedCallbacks();
+    const firstOptions = capturedOptions();
+
+    expect(firstOptions.streamVersion).toBe(1);
+    expect(firstOptions.runId).toMatch(/^run_/);
+    api.abortCurrentRequest();
+    expect(api.isLoading.value).toBe(false);
+
+    const secondPromise = api.sendMessage('第二问');
+    const secondCallbacks = capturedCallbacks();
+    const secondOptions = capturedOptions();
+    expect(secondOptions.runId).not.toBe(firstOptions.runId);
+
+    // 旧请求随后迟到：只能结束自己的 Promise，不能改动第二次运行。
+    firstCallbacks.onChunk('旧回答');
+    firstCallbacks.onDone();
+
+    secondCallbacks.onEvent({
+      v: 1,
+      runId: secondOptions.runId,
+      attempt: 0,
+      seq: 1,
+      type: 'run.started',
+      traceId: 'trace_second',
+      data: {},
+    });
+    secondCallbacks.onEvent({
+      v: 1,
+      runId: secondOptions.runId,
+      attempt: 0,
+      seq: 2,
+      type: 'message.delta',
+      traceId: 'trace_second',
+      data: { content: '新回答', decision: false },
+    });
+    vi.advanceTimersToNextFrame();
+    secondCallbacks.onEvent({
+      v: 1,
+      runId: secondOptions.runId,
+      attempt: 0,
+      seq: 3,
+      type: 'run.completed',
+      traceId: 'trace_second',
+      data: {},
+    });
+
+    await Promise.all([firstPromise, secondPromise]);
+    const modelMessages = store.conversations[0].messages.filter((message) => message.role === 'model');
+    expect(modelMessages[0].text || '').toBe('');
+    expect(modelMessages[1].text).toBe('新回答');
+    expect(api.isLoading.value).toBe(false);
+    expect(api.activeRunId.value).toBeNull();
+  });
+
   it('流无活动超过安全阈值时 reject 并中止请求;持续活动则不误杀', async () => {
     setup();
     const promise = api.sendMessage('你好');

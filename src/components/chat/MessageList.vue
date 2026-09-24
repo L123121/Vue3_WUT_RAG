@@ -3,6 +3,7 @@ import { ref, watch, nextTick, onMounted, computed } from 'vue';
 // 改用普通滚动容器，避免 DynamicScroller 虚拟滚动导致的流式跳动
 import { RefreshCw } from 'lucide-vue-next';
 import { useMessageStore } from '../../stores/message.store.js';
+import { getMessageFragmentSignature } from '../../utils/messageFragments.js';
 import MessageBubble from './MessageBubble.vue';
 
 const props = defineProps({
@@ -86,9 +87,10 @@ watch(() => {
     return [
       msg?.text?.length || 0,
       msg?.sources?.length || 0,
+      getMessageFragmentSignature(msg),
     ];
   }
-  return [0, 0];
+  return [0, 0, ''];
 }, () => {
   scrollToBottom();
 });

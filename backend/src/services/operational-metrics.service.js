@@ -15,6 +15,17 @@ const TOTAL_DEFAULTS = {
   ttsCalls: 0,
   ttsCharacters: 0,
   ttsCostCny: 0,
+  runs: 0,
+  completedRuns: 0,
+  failedRuns: 0,
+  abortedRuns: 0,
+  runToolCalls: 0,
+  runFallbacks: 0,
+  decisionCalls: 0,
+  decisionSuccesses: 0,
+  decisionFallbacks: 0,
+  decisionTimeouts: 0,
+  decisionShadow: 0,
 };
 
 const numberEnv = (name, fallback) => {
@@ -69,6 +80,8 @@ const createOperationalMetrics = (options = {}) => {
   const requests = [];
   const llmUsage = [];
   const ttsUsage = [];
+  const runUsage = [];
+  const decisionUsage = [];
   const alertState = new Map();
   let restoredState = null;
   if (persistence) {
@@ -154,7 +167,45 @@ const createOperationalMetrics = (options = {}) => {
     }
   };
 
+  const recordRun = ({
+    status = 'completed',
+    route = 'unknown',
+    durationMs = 0,
+    firstEventMs = 0,
+    toolRounds = 0,
+    toolCalls = 0,
+    fallback = false,
+    traceId = null,
+  } = {}) => {
+    const timestamp = now();
+    const normalizedStatus = ['completed', 'failed', 'aborted'].includes(status) ? status : 'failed';
+    const duration = Number(durationMs);
+    const firstEvent = Number(firstEventMs);
+    const rounds = Number(toolRounds);
+    const calls = Number(toolCalls);
+    const isFallback = fallback === true;
+
+    totals.runs += 1;
+    totals[`${normalizedStatus}Runs`] += 1;
+    totals.runToolCalls += Number.isFinite(calls) && calls > 0 ? calls : 0;
+    if (isFallback) totals.runFallbacks += 1;
+    pushBounded(runUsage, {
+      timestamp,
+      status: normalizedStatus,
+      route: String(route || 'unknown').slice(0, 40),
+      durationMs: Number.isFinite(duration) && duration >= 0 ? duration : 0,
+      firstEventMs: Number.isFinite(firstEvent) && firstEvent >= 0 ? firstEvent : 0,
+      toolRounds: Number.isFinite(rounds) && rounds >= 0 ? rounds : 0,
+      toolCalls: Number.isFinite(calls) && calls >= 0 ? calls : 0,
+      fallback: isFallback,
+      traceId: traceId || null,
+    });
+    checkAlerts();
+    schedulePersist();
+  };
+
   return {
+    recordRun,
     recordRequest({ method, path, statusCode, durationMs, traceId }) {
       const timestamp = now();
       totals.requests += 1;
@@ -165,6 +216,25 @@ const createOperationalMetrics = (options = {}) => {
     },
     recordError(error, context = {}) {
       logEvent('error', 'ops_error', { message: error?.message, stack: error?.stack, ...context });
+    },
+    recordDecision({ status = 'success', mode = 'off', latencyMs = 0, fallback = false, traceId = null } = {}) {
+      const timestamp = now();
+      const normalizedStatus = ['success', 'error', 'timeout'].includes(status) ? status : 'error';
+      const latency = Number(latencyMs);
+      totals.decisionCalls += 1;
+      if (normalizedStatus === 'success') totals.decisionSuccesses += 1;
+      if (normalizedStatus === 'timeout') totals.decisionTimeouts += 1;
+      if (fallback || normalizedStatus !== 'success') totals.decisionFallbacks += 1;
+      if (mode === 'shadow') totals.decisionShadow += 1;
+      pushBounded(decisionUsage, {
+        timestamp,
+        status: normalizedStatus,
+        mode: String(mode || 'off').slice(0, 20),
+        latencyMs: Number.isFinite(latency) && latency >= 0 ? latency : 0,
+        fallback: fallback === true || normalizedStatus !== 'success',
+        traceId: traceId || null,
+      });
+      schedulePersist();
     },
     recordLlmUsage({ model, usage, traceId, latencyMs = 0 }) {
       if (!usage) return;
@@ -196,9 +266,39 @@ const createOperationalMetrics = (options = {}) => {
     },
     snapshot() {
       const durations = requests.map((item) => item.durationMs);
+      const runDurations = runUsage.map((item) => item.durationMs);
+      const firstEventLatencies = runUsage.map((item) => item.firstEventMs);
+      const decisionLatencies = decisionUsage.map((item) => item.latencyMs);
+      const routeCounts = {};
+      for (const item of runUsage) routeCounts[item.route] = (routeCounts[item.route] || 0) + 1;
       if (ensureDaily(now())) schedulePersist();
       return {
         requests: { total: totals.requests, errors: totals.requestErrors, p50Ms: percentile(durations, 0.5), p95Ms: percentile(durations, 0.95) },
+        runs: {
+          total: totals.runs,
+          completed: totals.completedRuns,
+          failed: totals.failedRuns,
+          aborted: totals.abortedRuns,
+          successRate: totals.runs > 0 ? totals.completedRuns / totals.runs : 0,
+          fallbackRate: totals.runs > 0 ? totals.runFallbacks / totals.runs : 0,
+          fallbacks: totals.runFallbacks,
+          toolCalls: totals.runToolCalls,
+          duration: { p50Ms: percentile(runDurations, 0.5), p95Ms: percentile(runDurations, 0.95) },
+          firstEvent: { p50Ms: percentile(firstEventLatencies, 0.5), p95Ms: percentile(firstEventLatencies, 0.95) },
+          routeCounts,
+          recent: runUsage.slice(-100),
+        },
+        decisions: {
+          total: totals.decisionCalls,
+          successes: totals.decisionSuccesses,
+          fallbacks: totals.decisionFallbacks,
+          timeouts: totals.decisionTimeouts,
+          shadow: totals.decisionShadow,
+          successRate: totals.decisionCalls > 0 ? totals.decisionSuccesses / totals.decisionCalls : 0,
+          fallbackRate: totals.decisionCalls > 0 ? totals.decisionFallbacks / totals.decisionCalls : 0,
+          latency: { p50Ms: percentile(decisionLatencies, 0.5), p95Ms: percentile(decisionLatencies, 0.95) },
+          recent: decisionUsage.slice(-100),
+        },
         llm: { total: totals.llmCalls, promptTokens: totals.promptTokens, completionTokens: totals.completionTokens, estimatedCostCny: totals.llmCostCny, recent: llmUsage.slice(-100) },
         tts: { total: totals.ttsCalls, characters: totals.ttsCharacters, estimatedCostCny: totals.ttsCostCny, recent: ttsUsage.slice(-100) },
         daily: { ...daily },
@@ -213,6 +313,9 @@ const createOperationalMetrics = (options = {}) => {
       return {
         httpDurations: requests.map((item) => item.durationMs).filter((v) => Number.isFinite(v) && v >= 0),
         llmLatencies: llmUsage.map((item) => item.latencyMs).filter((v) => Number.isFinite(v) && v > 0),
+        runDurations: runUsage.map((item) => item.durationMs).filter((v) => Number.isFinite(v) && v >= 0),
+        runFirstEventLatencies: runUsage.map((item) => item.firstEventMs).filter((v) => Number.isFinite(v) && v >= 0),
+        decisionLatencies: decisionUsage.map((item) => item.latencyMs).filter((v) => Number.isFinite(v) && v >= 0),
       };
     },
     flush,

@@ -2,6 +2,7 @@
 
 const { AiService } = require('./ai.service');
 const { DocumentService } = require('./document.service');
+const { WikiService } = require('./wiki.service');
 const { EmbeddingService } = require('./embedding.service');
 const { vectorStore: vectorStoreSingleton } = require('./vector-store-qdrant.service');
 const { RerankerService } = require('./reranker.service');
@@ -34,10 +35,14 @@ class RagService {
 
     this.aiService = aiService || new AiService();
     this.documentService = new DocumentService();
+    this.wikiService = new WikiService({ documentService: this.documentService });
     this.embeddingService = new EmbeddingService();
     // 使用全局单例，避免创建新实例导致向量为空
     this.vectorStore = vectorStoreSingleton;
     this.maxContextLength = ragConfig.maxContextLength || 6000;
+    this.wikiFirstEnabled = ragConfig.wikiFirstEnabled !== false;
+    this.wikiFirstHybridEnabled = ragConfig.wikiFirstHybridEnabled !== false;
+    this.wikiFirstMaxEntries = ragConfig.wikiFirstMaxEntries || 3;
     this.parentChildEnabled = ragConfig.parentChildEnabled !== false;
     this.rerankEnabled = ragConfig.rerankEnabled !== false;
     this.rerankTopK = ragConfig.rerankTopK || 10;
@@ -109,6 +114,75 @@ class RagService {
     return ragPipeline.runRAGPipeline(this, message, history, options);
   }
 
+  async _tryWikiPipeline(message, options = {}) {
+    if (options.wikiFirst === false || this.wikiFirstEnabled === false) return null;
+    try {
+      const entries = await this.wikiService.searchPublished(message, { limit: this.wikiFirstMaxEntries });
+      if (!entries.length) return null;
+      const sources = entries.map((entry, index) => ({
+        id: entry.id,
+        docId: entry.id,
+        title: entry.title,
+        category: entry.category,
+        slug: entry.slug,
+        score: Math.max(0.5, 1 - index * 0.05),
+        sourceType: 'wiki',
+        stale: false,
+      }));
+      const context = entries.map((entry, index) => `【文档 ${index + 1}】${entry.title}（Wiki）\n${entry.body}`).join('\n\n').slice(0, options.maxContextLength || this.maxContextLength);
+      return {
+        context,
+        sources,
+        topChunks: entries.map((entry, index) => ({ id: entry.id, docId: entry.id, title: entry.title, text: entry.body.slice(0, 1200), score: sources[index].score })),
+        retrieval: { mode: 'wiki_navigation', topK: entries.length, sourceType: 'wiki' },
+        questionType: this.classifyQuestion(message),
+        rewrittenQuery: message,
+        hasReliableCandidates: Boolean(context),
+        sourceKind: 'wiki',
+        fallbackReason: null,
+      };
+    } catch (error) {
+      logEvent('warn', 'rag_wiki_first_failed_fallback_qdrant', { error: error.message });
+      return null;
+    }
+  }
+
+  _mergeWikiAndRagPipelines(wikiPipeline, ragPipeline, maxContextLength = this.maxContextLength) {
+    if (!wikiPipeline) return ragPipeline;
+    if (!ragPipeline) return wikiPipeline;
+
+    const wikiSources = Array.isArray(wikiPipeline.sources) ? wikiPipeline.sources : [];
+    const ragSources = Array.isArray(ragPipeline.sources) ? ragPipeline.sources : [];
+    const offset = wikiSources.length;
+    const wikiContext = String(wikiPipeline.context || '');
+    const ragContext = String(ragPipeline.context || '').replace(/【文档\s+(\d+)】/g, (_, index) => (
+      `【文档 ${Number(index) + offset}】`
+    ));
+    const separator = wikiContext && ragContext ? `\n\n${'='.repeat(40)}\n\n` : '';
+    const wikiBudget = ragContext ? Math.floor(maxContextLength * 0.4) : maxContextLength;
+    const ragBudget = ragContext ? Math.max(maxContextLength - wikiBudget - separator.length, 200) : 0;
+    const context = `${wikiContext.slice(0, wikiBudget)}${separator}${ragContext.slice(0, ragBudget)}`.slice(0, maxContextLength);
+
+    return {
+      ...ragPipeline,
+      context,
+      sources: [...wikiSources, ...ragSources],
+      topChunks: [
+        ...(Array.isArray(wikiPipeline.topChunks) ? wikiPipeline.topChunks : []),
+        ...(Array.isArray(ragPipeline.topChunks) ? ragPipeline.topChunks : []),
+      ],
+      hasReliableCandidates: Boolean(wikiPipeline.hasReliableCandidates || ragPipeline.hasReliableCandidates),
+      sourceKind: 'hybrid',
+      retrieval: {
+        ...(ragPipeline.retrieval || {}),
+        mode: 'wiki_qdrant_hybrid',
+        wikiCount: wikiSources.length,
+        qdrantCount: ragSources.length,
+      },
+      fallbackReason: null,
+    };
+  }
+
   /**
    * 本地混合检索管道 (流式)
    */
@@ -120,7 +194,14 @@ class RagService {
     const ownsTracer = !options.tracer;
     const totalStart = Date.now();
 
-    const pipeline = await this._runRAGPipeline(message, history, { ...options, tracer });
+    const wikiPipeline = await this._tryWikiPipeline(message, options);
+    const useWikiHybrid = wikiPipeline && this.wikiFirstHybridEnabled && options.wikiHybrid !== false;
+    const ragPipelineResult = !wikiPipeline || useWikiHybrid
+      ? await this._runRAGPipeline(message, history, { ...options, tracer })
+      : null;
+    const pipeline = useWikiHybrid
+      ? this._mergeWikiAndRagPipelines(wikiPipeline, ragPipelineResult, options.maxContextLength || this.maxContextLength)
+      : (wikiPipeline || ragPipelineResult);
 
     if (!pipeline.hasReliableCandidates) {
       return ownsTracer ? this._finishTrace(tracer, {
@@ -154,7 +235,7 @@ class RagService {
     // 生成回答:prompt 组装 / LLM 调用 / grounding 校验拆至 rag-generation.service
     const {
       reply, aiLatency, llmUsage, llmModel, processCard, grounding,
-    } = await ragGeneration.generateAnswer(this, { message, history, pipeline, tracer });
+    } = await ragGeneration.generateAnswer(this, { message, history, pipeline, tracer, options });
 
     const totalLatency = Date.now() - totalStart;
     metrics.recordLatency('total', totalLatency);
@@ -297,6 +378,7 @@ class RagService {
         }
       }
     } catch (err) {
+      if (err.code === 'INCOMPLETE_STREAM') throw err;
       const tracer = this._createTracer(message, options);
       tracer.markFallback('rag_pipeline_error');
       this._recordTraceStage(tracer, 'rag_pipeline', Date.now(), false, {}, err);
@@ -304,7 +386,7 @@ class RagService {
 
       const aiStart = Date.now();
       try {
-        const result = await this.aiService.getCompletion(message, history);
+        const result = await this.aiService.getCompletion(message, history, options);
         const aiLatency = Date.now() - aiStart;
         metrics.recordLatency('ai', aiLatency);
         this._recordTraceStage(tracer, 'llm', aiStart, true, {
@@ -379,6 +461,7 @@ class RagService {
     // 事件收集器,用于在管道内 yield
     const events = [];
     const onEvent = (event) => events.push(event);
+    let pipeline;
 
     // chat() drain 时提取管线信息。includePipeline 仅 chat 内部传入，
     // 公开流式端点不带该标志 → done 事件不携带管线负载，SSE 契约不变
@@ -391,7 +474,19 @@ class RagService {
       fallbackReason: pipeline.fallbackReason || null,
     } : null;
 
-    const pipeline = await this._runRAGPipeline(message, history, { ...options, tracer, onEvent });
+    const wikiPipeline = await this._tryWikiPipeline(message, options);
+    const useWikiHybrid = wikiPipeline && this.wikiFirstHybridEnabled && options.wikiHybrid !== false;
+    const ragPipelineResult = !wikiPipeline || useWikiHybrid
+      ? await this._runRAGPipeline(message, history, { ...options, tracer, onEvent })
+      : null;
+    pipeline = useWikiHybrid
+      ? this._mergeWikiAndRagPipelines(wikiPipeline, ragPipelineResult, options.maxContextLength || this.maxContextLength)
+      : (wikiPipeline || ragPipelineResult);
+
+    if (pipeline.sourceKind === 'wiki' || pipeline.sourceKind === 'hybrid') {
+      yield { type: 'retrieval', retrieval: pipeline.retrieval, traceId: tracer.traceId, trace: tracer.toSummary() };
+      yield { type: 'sources', sources: pipeline.sources };
+    }
 
     // 先 yield 管道中收集的事件
     for (const event of events) {
@@ -411,6 +506,7 @@ class RagService {
           matchedDocs: pipeline.sources.length,
           retrievedChunks: pipeline.topChunks.length,
         });
+        if (pipeline.sourceKind === 'hybrid') continue;
         yield event;
       }
     }

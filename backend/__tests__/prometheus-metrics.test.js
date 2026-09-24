@@ -19,10 +19,24 @@ const fixtureData = {
     ttsCalls: 45,
     ttsCharacters: 30000,
     ttsCostCny: 0.6,
+    runs: 800,
+    completedRuns: 720,
+    failedRuns: 60,
+    abortedRuns: 20,
+    runToolCalls: 150,
+    runFallbacks: 30,
+    decisionCalls: 90,
+    decisionSuccesses: 80,
+    decisionFallbacks: 10,
+    decisionTimeouts: 3,
+    decisionShadow: 40,
   },
   dailyCostCny: 0.45,
   httpDurations: [10, 60, 120, 300, 700, 1500, 4000, 20000],
   llmLatencies: [800, 2500],
+  runDurations: [100, 600, 2800],
+  runFirstEventLatencies: [20, 80, 400],
+  decisionLatencies: [80, 1200],
   memory: { rss: 1.6e8, heapUsed: 8e7, heapTotal: 1.2e8, external: 5e6 },
   uptimeSeconds: 3600.5,
   eventLoop: { p50Ms: 1.2, p95Ms: 8.9, p99Ms: 15.3, maxMs: 42 },
@@ -52,6 +66,16 @@ describe('prometheus-metrics.service', () => {
       expect(out).toContain(`# TYPE ${METRIC_PREFIX}http_requests_total counter`);
       expect(out).toContain(`${METRIC_PREFIX}http_requests_total 1200`);
       expect(out).toContain(`${METRIC_PREFIX}http_request_errors_total 12`);
+      expect(out).toContain(`${METRIC_PREFIX}runs_total 800`);
+      expect(out).toContain(`${METRIC_PREFIX}runs_completed_total 720`);
+      expect(out).toContain(`${METRIC_PREFIX}runs_failed_total 60`);
+      expect(out).toContain(`${METRIC_PREFIX}run_tool_calls_total 150`);
+      expect(out).toContain(`${METRIC_PREFIX}run_fallbacks_total 30`);
+      expect(out).toContain(`${METRIC_PREFIX}decision_calls_total 90`);
+      expect(out).toContain(`${METRIC_PREFIX}decision_successes_total 80`);
+      expect(out).toContain(`${METRIC_PREFIX}decision_fallbacks_total 10`);
+      expect(out).toContain(`${METRIC_PREFIX}decision_timeouts_total 3`);
+      expect(out).toContain(`${METRIC_PREFIX}decision_shadow_total 40`);
       expect(out).toContain(`${METRIC_PREFIX}llm_calls_total 340`);
       expect(out).toContain(`${METRIC_PREFIX}llm_tokens_total{type="prompt"} 56000`);
       expect(out).toContain(`${METRIC_PREFIX}llm_tokens_total{type="completion"} 8900`);
@@ -82,6 +106,9 @@ describe('prometheus-metrics.service', () => {
       expect(out).toContain(`${name}_sum 26690`);
       // LLM 延迟直方图独立成族
       expect(out).toContain(`${METRIC_PREFIX}llm_latency_ms_bucket{le="+Inf"} 2`);
+      expect(out).toContain(`${METRIC_PREFIX}run_duration_ms_bucket{le="+Inf"} 3`);
+      expect(out).toContain(`${METRIC_PREFIX}run_first_event_ms_bucket{le="+Inf"} 3`);
+      expect(out).toContain(`${METRIC_PREFIX}decision_latency_ms_bucket{le="+Inf"} 2`);
     });
 
     it('样本为空时直方图全 0 且不缺行', () => {

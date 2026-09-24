@@ -549,8 +549,8 @@ function cleanupFile(filePath) {
 }
 
 // ==================== 上传目录定期清理 ====================
-// 聊天上传的文件（upload-*.ext）目前前端只用本地预览，文件本身无引用，
-// RAG 文档上传解析后即 cleanupFile 删除。此任务定期清除残留的孤儿文件。
+// 聊天上传的文件由 attachment.service 记录用户/会话归属并设置 TTL；
+// RAG 文档上传解析后即 cleanupFile 删除。此任务定期清除残留文件和元数据。
 
 const UPLOADS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 天
 const UPLOADS_CLEAN_INTERVAL_MS = 24 * 60 * 60 * 1000; // 每天一次
@@ -573,6 +573,11 @@ function cleanOldUploads() {
       }
     }
     if (removed > 0) logEvent('info', 'file_upload_cleanup_done', { removed });
+    void require('./attachment.service').attachmentService.cleanupExpired()
+      .then((metadataRemoved) => {
+        if (metadataRemoved > 0) logEvent('info', 'attachment_metadata_cleanup_done', { removed: metadataRemoved });
+      })
+      .catch((error) => logEvent('warn', 'attachment_metadata_cleanup_failed', { error: error.message }));
   } catch (error) {
     logEvent('warn', 'file_upload_cleanup_failed', { error: error.message });
   }

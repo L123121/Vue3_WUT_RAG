@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 // 模拟 config（避免读 .env）
 vi.mock('../src/config', () => ({
@@ -318,6 +321,80 @@ describe('AgentService（单轮工具调度，原生 function calling）', () =>
     expect(content.some(c => c.content === '计算结果是 4')).toBe(true);
     const done = events.find(e => e.type === 'content' && (e.content === '' || e.done === true) && e.content !== '计算结果是 4');
     expect(done).toBeTruthy();
+  });
+
+  it('chatStream：大工具结果先落盘再在 tool_result 事件提供 artifact 元数据', async () => {
+    const config = require('../src/config');
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-artifact-e2e-'));
+    const previous = {
+      enabled: config.agent.contextCompactionEnabled,
+      threshold: config.agent.toolResultSpillThreshold,
+      spillDir: config.agent.toolSpillDir,
+    };
+    config.agent.contextCompactionEnabled = true;
+    config.agent.toolResultSpillThreshold = 10;
+    config.agent.toolSpillDir = tmpDir;
+
+    try {
+      const fakeAi = {
+        async *getCompletionStream(message, history, opts) {
+          if (opts.tools && !opts.messages?.some((item) => item.role === 'tool')) {
+            yield { content: '', done: true, tool_calls: [{ id: 'artifact-call', function: { name: 'calculate', arguments: '{"expression":"2+2"}' } }] };
+            return;
+          }
+          const hasReadCall = opts.messages?.some((item) => item.role === 'assistant'
+            && item.tool_calls?.some((call) => call.function?.name === 'read_tool_artifact'));
+          if (opts.tools && !hasReadCall) {
+            const previousTool = opts.messages?.find((item) => item.role === 'tool' && String(item.content).includes('已保存至工件'));
+            const artifactId = String(previousTool?.content || '').match(/工件 (spill_[a-zA-Z0-9_-]+)/)?.[1];
+            yield { content: '', done: true, tool_calls: [{ id: 'read-call', function: { name: 'read_tool_artifact', arguments: JSON.stringify({ artifactId }) } }] };
+            return;
+          }
+          yield { content: '已读取工具结果', done: false };
+          yield { content: '', done: true };
+        },
+      };
+      const svc = new agentMod.AgentService(fakeAi);
+      svc.runTool = vi.fn(async (name, args, context) => {
+        if (name === 'calculate') {
+          return {
+            ok: true,
+            content: '大型工具结果'.repeat(20),
+            uiSummary: '工具结果已生成',
+          };
+        }
+        return agentTools.executeToolDetailed(name, args, context);
+      });
+
+      const events = [];
+      for await (const event of svc.chatStream('读取大结果', [], {
+        userId: 'user-artifact',
+        conversationId: 'conv-artifact',
+      })) events.push(event);
+
+      const toolResults = events.filter((event) => event.type === 'tool_result').map((event) => event.tool_result);
+      const toolResult = toolResults[0];
+      expect(toolResults).toHaveLength(2);
+      expect(svc.runTool).toHaveBeenCalledTimes(2);
+      expect(toolResults[1]).toMatchObject({
+        artifactId: expect.stringMatching(/^spill_/),
+        offset: 0,
+        hasMore: expect.any(Boolean),
+      });
+      expect(toolResult).toMatchObject({
+        spilled: true,
+        artifactId: expect.stringMatching(/^spill_/),
+        totalChars: '大型工具结果'.repeat(20).length,
+        offset: 0,
+        hasMore: true,
+      });
+      expect(fs.readdirSync(tmpDir).some((name) => name.endsWith('.md'))).toBe(true);
+    } finally {
+      config.agent.contextCompactionEnabled = previous.enabled;
+      config.agent.toolResultSpillThreshold = previous.threshold;
+      config.agent.toolSpillDir = previous.spillDir;
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it('chatStream：LLM 未调工具（直接回答）时实时透传 decision 内容', async () => {

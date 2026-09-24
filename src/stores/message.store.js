@@ -12,6 +12,8 @@ export const useMessageStore = defineStore('message', () => {
     currentStreamingId: streaming.currentStreamingId,
     decisionDraft: streaming.decisionDraft,
     activeStreamingConversationId: streaming.activeStreamingConversationId,
+    activeRunId: streaming.activeRunId,
+    runsById: streaming.runsById,
     isConnected: streaming.isConnected,
     isReconnecting: streaming.isReconnecting,
     reconnectAttempt: streaming.reconnectAttempt,
@@ -21,6 +23,7 @@ export const useMessageStore = defineStore('message', () => {
     retryMessage: streaming.retryMessage,
     editAndResendMessage: streaming.editAndResendMessage,
     abortCurrentRequest: streaming.abortCurrentRequest,
+    abortRun: streaming.abortRun,
 
     // 消息操作
     deleteMessage: actions.deleteMessage,

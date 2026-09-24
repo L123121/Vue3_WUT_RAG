@@ -8,6 +8,14 @@ const { spillToolResult, compactHistoricalToolResults } = require("./context-com
 const config = require("../config");
 const { logEvent } = require('./observability.service');
 
+function addUsage(total, usage) {
+  if (!usage || typeof usage !== 'object') return total;
+  for (const key of ['prompt_tokens', 'completion_tokens', 'total_tokens', 'input_tokens', 'output_tokens']) {
+    if (Number.isFinite(Number(usage[key]))) total[key] = (total[key] || 0) + Number(usage[key]);
+  }
+  return total;
+}
+
 /**
  * AgentService — 轻量 Agent 工具调度层（V2.0，面试官反馈②）
  *
@@ -161,12 +169,20 @@ function buildDecisionMessages(message, history = []) {
 
   const hist = Array.isArray(history) ? history : [];
   const messages = [{ role: "system", content: system }];
-  for (const h of hist) {
-    const role = h.role === "assistant" ? "assistant" : h.role === "system" ? "system" : "user";
+  const bounded = [];
+  let historyChars = 0;
+  for (let i = hist.length - 1; i >= 0 && bounded.length < 12; i -= 1) {
+    const h = hist[i];
+    // system 只能来自 Agent 自己的 system prompt，客户端 history 的 system 不可信。
+    const role = h?.role === "assistant" ? "assistant" : h?.role === "user" ? "user" : null;
+    if (!role) continue;
     const content = String(h.content || "").slice(0, 2000);
-    if (content) messages.push({ role, content });
+    if (!content || (bounded.length > 0 && historyChars + content.length > 6000)) continue;
+    bounded.unshift({ role, content });
+    historyChars += content.length;
   }
-  messages.push({ role: "user", content: String(message || "") });
+  messages.push(...bounded);
+  messages.push({ role: "user", content: String(message || "").slice(0, 4000) });
   return messages;
 }
 
@@ -286,6 +302,7 @@ class AgentService {
       finishReason: "direct_answer", // direct_answer | round_limit | no_progress | error
       // 上下文压缩统计（L1 落盘次数 / L2 压缩组数 / 节省字符数），随 trace 持久化
       compaction: { spilled: 0, compactedGroups: 0, savedChars: 0 },
+      usage: {},
     };
 
     let lastSignature = null;
@@ -302,6 +319,7 @@ class AgentService {
         for await (const chunk of this.aiService.getCompletionStream("", [], { tools, messages, signal: options.signal })) {
           if (chunk.done) {
             toolCalls = chunk.tool_calls || null;
+            addUsage(trace.usage, chunk.usage);
           } else if (chunk.content) {
             // 决策阶段内容实时透传（decision: true 标记）。模型可能在输出文本后
             // 又发起 tool_calls，因此前端把 decision 内容先渲染到"思考草稿区"；
@@ -311,6 +329,7 @@ class AgentService {
           }
         }
       } catch (err) {
+        if (err.code === 'INCOMPLETE_STREAM') throw err;
         logEvent('warn', 'agent_round_decide_failed', { round: round + 1, error: err.message });
         trace.finishReason = "error";
         trace.totalMs = Date.now() - totalStart;
@@ -326,7 +345,11 @@ class AgentService {
         return;
       }
 
-      const validCalls = (toolCalls || []).filter((tc) => tc.function?.name);
+      const maxToolCallsPerRound = config.agent?.maxToolCallsPerRound || 4;
+      const validCalls = (toolCalls || []).filter((tc) => tc.function?.name).slice(0, maxToolCallsPerRound);
+      if ((toolCalls || []).length > validCalls.length) {
+        logEvent('warn', 'agent_tool_call_limit_applied', { requested: toolCalls.length, limit: maxToolCallsPerRound });
+      }
 
       // LLM 直接回答（无工具调用）→ 内容已在决策阶段实时透传，此处直接收尾
       if (validCalls.length === 0) {
@@ -382,16 +405,47 @@ class AgentService {
         mergeSources(collectedSources, r.data?.sources);
       }
 
+      // L1 大结果落盘后再下发 tool_result，让 UI 获得 artifactId/hasMore 等完整元数据。
+      const spilledResults = await Promise.all(
+        results.map(({ tc, result }, idx) =>
+          spillToolResult(tc.function.name, result, {
+            traceId: trace.traceId,
+            userId: options.userId,
+            conversationId: options.conversationId,
+            round: round + 1,
+            index: idx,
+          })
+        )
+      );
+      for (const s of spilledResults) {
+        if (s.spilled) {
+          trace.compaction.spilled += 1;
+          trace.compaction.savedChars += Math.max(s.originalLength - s.content.length, 0);
+        }
+      }
+
       // 下发 tool_result 事件（前端展示，单工具独立耗时）
-      for (const { tc, result, uiSummary, durationMs } of results) {
+      for (const [index, { tc, result, uiSummary, data, durationMs }] of results.entries()) {
+        const spilled = spilledResults[index];
+        const artifactId = spilled.artifactId || data?.artifactId || null;
+        const totalChars = spilled.spilled ? spilled.originalLength : (data?.totalChars ?? spilled.originalLength);
+        const offset = Number.isFinite(Number(data?.offset)) ? Number(data.offset) : 0;
+        const hasMore = spilled.spilled === true
+          || data?.hasMore === true
+          || spilled.originalLength > spilled.content.length;
         yield {
           type: "tool_result",
           tool_result: {
             name: tc.function.name,
-            content: uiSummary || result,
+            content: uiSummary || String(result || '').slice(0, 1000),
             uiSummary: uiSummary || null,
             status: "done",
             durationMs,
+            artifactId,
+            spilled: spilled.spilled === true,
+            totalChars,
+            offset,
+            hasMore,
           },
         };
       }
@@ -402,18 +456,6 @@ class AgentService {
       toolSummary.push(validCalls.map((t) => t.function.name).join(","));
 
       // 工具结果回注（tool 角色消息，供下一轮决策/最终生成）
-      // L1 大结果落盘：超阈值结果写盘，上下文只留头部摘要+文件引用
-      const spilledResults = await Promise.all(
-        results.map(({ tc, result }, idx) =>
-          spillToolResult(tc.function.name, result, { traceId: trace.traceId, round: round + 1, index: idx })
-        )
-      );
-      for (const s of spilledResults) {
-        if (s.spilled) {
-          trace.compaction.spilled += 1;
-          trace.compaction.savedChars += Math.max(s.originalLength - s.content.length, 0);
-        }
-      }
       messages = [
         ...messages,
         { role: "assistant", content: null, tool_calls: toAssistantToolCalls(validCalls) },
@@ -465,7 +507,8 @@ class AgentService {
     let finalStreamed = false;
     try {
       for await (const chunk of this.aiService.getCompletionStream("", [], { messages, tools: finalTools, signal: options.signal })) {
-        if (chunk.done) {
+          if (chunk.done) {
+          addUsage(trace.usage, chunk.usage);
           trace.totalMs = Date.now() - totalStart;
           logEvent('info', 'agent_done', { tools: toolSummary.join(";"), totalMs: trace.totalMs });
           persistTrace(trace);
@@ -481,6 +524,7 @@ class AgentService {
         }
       }
     } catch (err) {
+      if (err.code === 'INCOMPLETE_STREAM') throw err;
       logEvent('warn', 'agent_final_answer_failed', { error: err.message });
       trace.finishReason = "error";
       trace.totalMs = Date.now() - totalStart;

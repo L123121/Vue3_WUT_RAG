@@ -1,3 +1,5 @@
+import { hydrateMessageFragments } from './messageFragments.js';
+
 const createMessageId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const getMessageText = (msg) => {
@@ -11,7 +13,7 @@ const normalizeRole = (role) => {
   return role || 'model';
 };
 
-const createWelcomeMessage = () => ({
+const createWelcomeMessage = () => hydrateMessageFragments({
   id: 'welcome',
   role: 'model',
   content: '你好！我是武理小精灵，你的校园 AI 助手。有什么我可以帮你的吗？',
@@ -20,7 +22,7 @@ const createWelcomeMessage = () => ({
 
 const normalizeMessage = (msg = {}) => {
   const text = getMessageText(msg);
-  return {
+  return hydrateMessageFragments({
     ...msg,
     id: msg.id || createMessageId(),
     role: normalizeRole(msg.role),
@@ -28,7 +30,7 @@ const normalizeMessage = (msg = {}) => {
     // 保留 text 字段兼容 Vue 模板中直接引用 message.text 的写法
     text: msg.text ?? text,
     timestamp: msg.timestamp || new Date(),
-  };
+  });
 };
 
 const normalizeMessages = (list) =>

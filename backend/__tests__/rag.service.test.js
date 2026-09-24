@@ -30,6 +30,31 @@ describe('RagService', () => {
     expect(fused.map(item => item.docId)).toEqual(['doc-b', 'doc-a']);
   });
 
+  it('Wiki 与 Qdrant 候选合并为统一来源和文档编号', () => {
+    const RagService = getRagService();
+    const rag = new RagService({ getCompletion: vi.fn() });
+    const merged = rag._mergeWikiAndRagPipelines({
+      sourceKind: 'wiki',
+      context: '【文档 1】校园百科（Wiki）\n办理说明',
+      sources: [{ id: 'wiki-1', title: '校园百科' }],
+      topChunks: [{ docId: 'wiki-1', text: '办理说明' }],
+      hasReliableCandidates: true,
+      retrieval: { mode: 'wiki_navigation' },
+    }, {
+      context: '【文档 1】课程手册（段落 1）\n课程说明',
+      sources: [{ id: 'doc-1', title: '课程手册' }],
+      topChunks: [{ docId: 'doc-1', text: '课程说明' }],
+      hasReliableCandidates: true,
+      retrieval: { mode: 'hybrid_vector_bm25_rrf' },
+    });
+
+    expect(merged.sourceKind).toBe('hybrid');
+    expect(merged.sources.map((source) => source.id)).toEqual(['wiki-1', 'doc-1']);
+    expect(merged.context).toContain('【文档 1】校园百科');
+    expect(merged.context).toContain('【文档 2】课程手册');
+    expect(merged.retrieval).toMatchObject({ mode: 'wiki_qdrant_hybrid', wikiCount: 1, qdrantCount: 1 });
+  });
+
   it('同一切片被多路召回时会合并分数和通道', () => {
     const RagService = getRagService();
     const rag = new RagService({ getCompletion: vi.fn() });

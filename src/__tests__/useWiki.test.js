@@ -209,6 +209,25 @@ describe('useWikiEntry', () => {
     wrapper.unmount();
   });
 
+  it('服务端编译好的 relatedPages 优先于本地按分类推荐', async () => {
+    mocks.getWikiEntry.mockResolvedValue({
+      success: true,
+      data: {
+        ...meta('d2', '数据结构', '课程资料:数据结构'),
+        body: '# 要点',
+        simulated: false,
+        sourceLabel: '',
+        relatedPages: [{ id: 'd3', slug: '', title: '校园指南', reason: '同属信息类基础资料' }],
+      },
+    });
+    const { result, wrapper } = mountComposable(useWikiEntry);
+    await flushPromises();
+    // 服务端只给了 d3 一条，若仍走本地分类推荐会得到 [d1, d3]（同分类兜底），
+    // 命中 relatedPages 分支才会精确等于服务端这一条
+    expect(result.related.value).toEqual([{ id: 'd3', slug: '', title: '校园指南', reason: '同属信息类基础资料' }]);
+    wrapper.unmount();
+  });
+
   it('未上架或不存在进入 notFound 态', async () => {
     mocks.getWikiEntry.mockRejectedValue(Object.assign(new Error('词条不存在或尚未上架'), { status: 404 }));
     const { result, wrapper } = mountComposable(useWikiEntry);

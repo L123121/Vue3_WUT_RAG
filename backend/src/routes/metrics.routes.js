@@ -12,6 +12,7 @@ const {
   getRiskSummary,
   createKnowledgeTask,
 } = require('../services/quality-governance.service');
+const { readRunEvents } = require('../services/run-event-log.service');
 const config = require('../config');
 const {
   renderPrometheusMetrics,
@@ -50,7 +51,10 @@ router.get('/prometheus', (req, res) => {
 
 // 内存存储（轻量，重启清空）
 const webVitalsStore = [];
+const clientPerformanceStore = [];
 const MAX_WEB_VITALS = 1000;
+const MAX_CLIENT_PERFORMANCE = 1000;
+const CLIENT_METRIC_NAMES = new Set(['markdown_worker']);
 
 // POST /api/metrics/web-vitals — 前端上报
 router.post('/web-vitals', (req, res) => {
@@ -68,6 +72,48 @@ router.post('/web-vitals', (req, res) => {
   res.json({ success: true });
 });
 
+router.post('/client-performance', requireAuth, (req, res) => {
+  const payload = req.body && typeof req.body === 'object' ? req.body : {};
+  if (!CLIENT_METRIC_NAMES.has(String(payload.name || ''))) {
+    return res.status(400).json({ success: false, error: '不支持的客户端指标' });
+  }
+  const numeric = (value, fallback = 0, max = 1_000_000) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.max(0, Math.min(parsed, max)) : fallback;
+  };
+  const metric = {
+    name: payload.name,
+    submitted: numeric(payload.submitted, 0, 1_000_000),
+    completed: numeric(payload.completed, 0, 1_000_000),
+    failed: numeric(payload.failed, 0, 1_000_000),
+    timedOut: numeric(payload.timedOut, 0, 1_000_000),
+    staleResults: numeric(payload.staleResults, 0, 1_000_000),
+    queueDepth: numeric(payload.queueDepth, 0, 10_000),
+    queued: numeric(payload.queued, 0, 10_000),
+    inFlight: numeric(payload.inFlight, 0, 10_000),
+    p50Ms: numeric(payload.duration?.p50Ms, 0, 60_000),
+    p95Ms: numeric(payload.duration?.p95Ms, 0, 60_000),
+    sampleCount: numeric(payload.duration?.sampleCount, 0, 10_000),
+    contentChars: numeric(payload.contentChars, 0, 10_000_000),
+    serverTimestamp: new Date().toISOString(),
+  };
+  clientPerformanceStore.push(metric);
+  if (clientPerformanceStore.length > MAX_CLIENT_PERFORMANCE) {
+    clientPerformanceStore.splice(0, clientPerformanceStore.length - MAX_CLIENT_PERFORMANCE);
+  }
+  res.json({ success: true });
+});
+
+router.get('/runs/:runId/events', requireAuth, async (req, res, next) => {
+  if (req.role !== 'admin') return res.status(403).json({ success: false, error: '需要管理员权限' });
+  try {
+    const events = await readRunEvents(req.params.runId);
+    res.json({ success: true, data: { runId: req.params.runId, events } });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/dashboard', requireAuth, async (req, res, next) => {
   if (req.role !== 'admin') return res.status(403).json({ success: false, error: '需要管理员权限' });
   try {
@@ -81,6 +127,7 @@ router.get('/dashboard', requireAuth, async (req, res, next) => {
         generatedAt: new Date().toISOString(),
         quality,
         operations: operationalMetrics.snapshot(),
+        clientPerformance: clientPerformanceStore.slice(-100),
         satisfaction: feedback,
         evaluationHistory: compareEvaluations(evaluationHistory),
         riskAudit,

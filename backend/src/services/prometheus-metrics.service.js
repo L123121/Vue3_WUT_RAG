@@ -69,13 +69,29 @@ function gaugeFamily(name, help, value) {
 function renderPrometheusMetrics(data) {
   const {
     totals = {}, dailyCostCny = 0, httpDurations = [], llmLatencies = [],
-    memory = null, uptimeSeconds = null, eventLoop = null,
+    runDurations = [], runFirstEventLatencies = [], decisionLatencies = [], memory = null, uptimeSeconds = null, eventLoop = null,
   } = data || {};
 
   const lines = [];
   lines.push(...counterFamily('http_requests_total', 'Total HTTP requests recorded by the ops metrics layer', totals.requests || 0));
   lines.push(...counterFamily('http_request_errors_total', 'Total HTTP requests answered with status >= 500', totals.requestErrors || 0));
   lines.push(...histogramFamily('http_request_duration_ms', 'HTTP request duration in milliseconds', httpDurations, LATENCY_BUCKETS_MS));
+
+  lines.push(...counterFamily('runs_total', 'Total conversation/agent runs recorded', totals.runs || 0));
+  lines.push(...counterFamily('runs_completed_total', 'Total conversation/agent runs completed', totals.completedRuns || 0));
+  lines.push(...counterFamily('runs_failed_total', 'Total conversation/agent runs failed', totals.failedRuns || 0));
+  lines.push(...counterFamily('runs_aborted_total', 'Total conversation/agent runs aborted', totals.abortedRuns || 0));
+  lines.push(...counterFamily('run_tool_calls_total', 'Total tool calls observed across runs', totals.runToolCalls || 0));
+  lines.push(...counterFamily('run_fallbacks_total', 'Total runs that fell back to another chain', totals.runFallbacks || 0));
+  lines.push(...histogramFamily('run_duration_ms', 'Conversation/agent run duration in milliseconds', runDurations, LATENCY_BUCKETS_MS));
+  lines.push(...histogramFamily('run_first_event_ms', 'Time to first RunEvent in milliseconds', runFirstEventLatencies, LATENCY_BUCKETS_MS));
+
+  lines.push(...counterFamily('decision_calls_total', 'Total Jev/System One decision calls recorded', totals.decisionCalls || 0));
+  lines.push(...counterFamily('decision_successes_total', 'Total successful Jev/System One decisions', totals.decisionSuccesses || 0));
+  lines.push(...counterFamily('decision_fallbacks_total', 'Total Jev/System One decisions that fell back', totals.decisionFallbacks || 0));
+  lines.push(...counterFamily('decision_timeouts_total', 'Total Jev/System One decision timeouts', totals.decisionTimeouts || 0));
+  lines.push(...counterFamily('decision_shadow_total', 'Total Jev/System One shadow decisions', totals.decisionShadow || 0));
+  lines.push(...histogramFamily('decision_latency_ms', 'Jev/System One decision latency in milliseconds', decisionLatencies, LATENCY_BUCKETS_MS));
 
   lines.push(...counterFamily('llm_calls_total', 'Total LLM calls recorded', totals.llmCalls || 0));
   lines.push(`# HELP ${METRIC_PREFIX}llm_tokens_total Total LLM tokens by type`);
@@ -154,10 +170,24 @@ function collectPrometheusSnapshot() {
       ttsCalls: snapshot.tts?.total || 0,
       ttsCharacters: snapshot.tts?.characters || 0,
       ttsCostCny: snapshot.tts?.estimatedCostCny || 0,
+      runs: snapshot.runs?.total || 0,
+      completedRuns: snapshot.runs?.completed || 0,
+      failedRuns: snapshot.runs?.failed || 0,
+      abortedRuns: snapshot.runs?.aborted || 0,
+      runToolCalls: snapshot.runs?.toolCalls || 0,
+      runFallbacks: snapshot.runs?.fallbacks || 0,
+      decisionCalls: snapshot.decisions?.total || 0,
+      decisionSuccesses: snapshot.decisions?.successes || 0,
+      decisionFallbacks: snapshot.decisions?.fallbacks || 0,
+      decisionTimeouts: snapshot.decisions?.timeouts || 0,
+      decisionShadow: snapshot.decisions?.shadow || 0,
     },
     dailyCostCny: snapshot.daily?.estimatedCostCny || 0,
     httpDurations: raw.httpDurations,
     llmLatencies: raw.llmLatencies,
+    runDurations: raw.runDurations,
+    runFirstEventLatencies: raw.runFirstEventLatencies,
+    decisionLatencies: raw.decisionLatencies,
     memory: process.memoryUsage(),
     uptimeSeconds: process.uptime(),
     eventLoop,

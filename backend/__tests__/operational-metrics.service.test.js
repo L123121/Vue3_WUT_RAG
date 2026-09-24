@@ -29,6 +29,45 @@ describe('operational-metrics.service', () => {
     expect(snapshot.daily.estimatedCostCny).toBeCloseTo(2.105);
   });
 
+  it('聚合运行完成率、首事件延迟、工具调用和降级率', () => {
+    const metrics = createOperationalMetrics({ now: () => Date.parse('2026-08-18T12:00:00.000Z') });
+    metrics.recordRun({ status: 'completed', route: 'rag', durationMs: 100, firstEventMs: 20, toolRounds: 1, toolCalls: 2 });
+    metrics.recordRun({ status: 'failed', route: 'agent', durationMs: 300, firstEventMs: 40, toolRounds: 2, toolCalls: 1, fallback: true });
+
+    const snapshot = metrics.snapshot();
+    expect(snapshot.runs).toMatchObject({
+      total: 2,
+      completed: 1,
+      failed: 1,
+      aborted: 0,
+      successRate: 0.5,
+      fallbackRate: 0.5,
+      toolCalls: 3,
+      routeCounts: { rag: 1, agent: 1 },
+    });
+    expect(snapshot.runs.duration).toEqual({ p50Ms: 100, p95Ms: 300 });
+    expect(snapshot.runs.firstEvent).toEqual({ p50Ms: 20, p95Ms: 40 });
+    expect(metrics.rawSamples()).toMatchObject({ runDurations: [100, 300], runFirstEventLatencies: [20, 40] });
+  });
+
+  it('聚合 Jev 决策成功、shadow、超时和降级指标', () => {
+    const metrics = createOperationalMetrics({ now: () => Date.parse('2026-08-18T12:00:00.000Z') });
+    metrics.recordDecision({ status: 'success', mode: 'shadow', latencyMs: 80, traceId: 'trace-1' });
+    metrics.recordDecision({ status: 'timeout', mode: 'enforce', latencyMs: 1200, fallback: true, traceId: 'trace-2' });
+
+    expect(metrics.snapshot().decisions).toMatchObject({
+      total: 2,
+      successes: 1,
+      fallbacks: 1,
+      timeouts: 1,
+      shadow: 1,
+      successRate: 0.5,
+      fallbackRate: 0.5,
+      latency: { p50Ms: 80, p95Ms: 1200 },
+    });
+    expect(metrics.rawSamples().decisionLatencies).toEqual([80, 1200]);
+  });
+
   it('跨自然日后重新计算当日成本', () => {
     process.env.TTS_COST_CNY_PER_10K_CHARS = '1';
     let timestamp = Date.parse('2026-08-18T15:59:00.000Z');

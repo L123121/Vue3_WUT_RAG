@@ -1,6 +1,7 @@
 "use strict";
 
 const { StringDecoder } = require('string_decoder');
+const crypto = require('crypto');
 const config = require('../config');
 const { request, requestStream } = require('../utils/httpClient');
 const { metrics } = require('./metrics.service');
@@ -11,9 +12,20 @@ const { withActiveSpan, startLlmSpan, setLlmUsage, endLlmSpan } = require('./ote
 // 防止 LLM API 限流（429 Too Many Requests），控制同时发往 API 的请求数量。
 // 多余的请求排队等待，而非直接报错。
 
-const LLM_CONCURRENCY = parseInt(process.env.LLM_CONCURRENCY || '3', 10);
+const LLM_CONCURRENCY = Math.max(1, parseInt(process.env.LLM_CONCURRENCY || '3', 10));
+const LLM_MAX_PENDING = Math.max(0, parseInt(process.env.LLM_MAX_PENDING || '20', 10));
+const LLM_QUEUE_TIMEOUT_MS = Math.max(1000, parseInt(process.env.LLM_QUEUE_TIMEOUT_MS || '15000', 10));
 const { QueryCache } = require('../utils/query-cache');
 const { logEvent } = require('./observability.service');
+
+class IncompleteStreamError extends Error {
+  constructor(provider = 'upstream') {
+    super(`${provider} 流在收到终态前提前结束`);
+    this.name = 'IncompleteStreamError';
+    this.code = 'INCOMPLETE_STREAM';
+    this.retryable = true;
+  }
+}
 
 // history compaction 缓存（模块级单例）
 const compactCache = new QueryCache(
@@ -21,26 +33,89 @@ const compactCache = new QueryCache(
   config?.rag?.compactCacheTtlMs || 1800000,
 );
 
+class QueueOverflowError extends Error {
+  constructor() {
+    super('LLM 请求排队已满，请稍后重试');
+    this.name = 'QueueOverflowError';
+    this.code = 'LLM_QUEUE_FULL';
+    this.statusCode = 503;
+    this.expose = true;
+    this.retryable = true;
+  }
+}
+
+class QueueWaitTimeoutError extends Error {
+  constructor() {
+    super('LLM 请求排队超时，请稍后重试');
+    this.name = 'QueueWaitTimeoutError';
+    this.code = 'LLM_QUEUE_TIMEOUT';
+    this.statusCode = 503;
+    this.expose = true;
+    this.retryable = true;
+  }
+}
+
+const createAbortError = () => {
+  const error = new Error('客户端已断开');
+  error.name = 'AbortError';
+  error.code = 'CLIENT_ABORTED';
+  return error;
+};
+
 class RequestQueue {
-  constructor(maxConcurrent) {
-    this._max = maxConcurrent;
+  constructor(maxConcurrent, { maxPending = LLM_MAX_PENDING, waitTimeoutMs = LLM_QUEUE_TIMEOUT_MS } = {}) {
+    this._max = Math.max(1, Number(maxConcurrent) || 1);
+    this._maxPending = Math.max(0, Number(maxPending) || 0);
+    this._waitTimeoutMs = Math.max(0, Number(waitTimeoutMs) || 0);
     this._running = 0;
     this._waiters = [];
   }
 
   /**
-   * 获取一个执行槽位。返回 release 函数，调用后释放槽位。
+   * 获取一个执行槽位。排队等待支持 AbortSignal、数量上限和超时。
    * 用法：
-   *   const release = await queue.acquire();
+   *   const release = await queue.acquire(signal);
    *   try { /* ... 调用 API ... *\/ } finally { release(); }
    */
-  acquire() {
+  acquire(signal) {
+    if (signal?.aborted) return Promise.reject(createAbortError());
     if (this._running < this._max) {
-      this._running++;
+      this._running += 1;
       return Promise.resolve(this._release());
     }
-    return new Promise(resolve => {
-      this._waiters.push(resolve);
+    if (this._waiters.length >= this._maxPending) return Promise.reject(new QueueOverflowError());
+
+    return new Promise((resolve, reject) => {
+      const waiter = {
+        resolve,
+        reject,
+        timer: null,
+        settled: false,
+        signal,
+        onAbort: null,
+      };
+      const cleanup = () => {
+        if (waiter.timer) clearTimeout(waiter.timer);
+        if (signal && waiter.onAbort) signal.removeEventListener('abort', waiter.onAbort);
+      };
+      const remove = () => {
+        const index = this._waiters.indexOf(waiter);
+        if (index >= 0) this._waiters.splice(index, 1);
+      };
+      const rejectWaiter = (error) => {
+        if (waiter.settled) return;
+        waiter.settled = true;
+        remove();
+        cleanup();
+        reject(error);
+      };
+      waiter.onAbort = () => rejectWaiter(createAbortError());
+      if (signal) signal.addEventListener('abort', waiter.onAbort, { once: true });
+      if (this._waitTimeoutMs > 0) {
+        waiter.timer = setTimeout(() => rejectWaiter(new QueueWaitTimeoutError()), this._waitTimeoutMs);
+        waiter.timer.unref?.();
+      }
+      this._waiters.push(waiter);
     });
   }
 
@@ -49,17 +124,23 @@ class RequestQueue {
     return () => {
       if (released) return;
       released = true;
-      this._running--;
-      if (this._waiters.length > 0) {
+      this._running -= 1;
+      while (this._waiters.length > 0) {
         const next = this._waiters.shift();
-        this._running++;
-        next(this._release());
+        if (!next || next.settled) continue;
+        next.settled = true;
+        if (next.timer) clearTimeout(next.timer);
+        if (next.onAbort) next.signal?.removeEventListener('abort', next.onAbort);
+        this._running += 1;
+        next.resolve(this._release());
+        return;
       }
     };
   }
 
   get pending() { return this._waiters.length; }
   get running() { return this._running; }
+  get maxPending() { return this._maxPending; }
 }
 
 const llmQueue = new RequestQueue(LLM_CONCURRENCY);
@@ -170,8 +251,83 @@ class AiService {
     }
     return [
       ...recent,
-      { role: 'user', content: message },
+      { role: 'user', content: String(message || '').slice(0, 4000) },
     ];
+  }
+
+  /**
+   * 对显式 opts.messages 也执行上下文边界控制。
+   * Agent 的工具调用历史必须在 provider 入口统一限额，不能因为绕过 history 参数而失去预算保护。
+   */
+  _boundMessages(messages = []) {
+    if (!Array.isArray(messages)) return [];
+    const maxChars = config.ai?.contextMaxChars || 12000;
+    const maxMessageChars = config.ai?.contextMessageMaxChars || 4000;
+    const normalized = messages.map((message) => {
+      const role = ['system', 'user', 'assistant', 'tool'].includes(message?.role) ? message.role : 'user';
+      const content = message?.content == null ? null : String(message.content).slice(0, maxMessageChars);
+      const next = { ...message, role, content };
+      if (role === 'tool') {
+        next.tool_call_id = String(message.tool_call_id || '').slice(0, 160);
+      }
+      if (Array.isArray(message?.tool_calls)) {
+        next.tool_calls = message.tool_calls.slice(0, 8).map((call) => ({
+          id: String(call?.id || '').slice(0, 160),
+          type: call?.type || 'function',
+          function: {
+            name: String(call?.function?.name || '').slice(0, 120),
+            arguments: String(call?.function?.arguments || '{}').slice(0, 2000),
+          },
+        }));
+      }
+      return next;
+    });
+
+    const system = normalized.filter((message) => message.role === 'system');
+    const body = normalized.filter((message) => message.role !== 'system');
+    const systemBudget = Math.min(Math.floor(maxChars * 0.35), 5000);
+    let used = 0;
+    const boundedSystem = [];
+    for (const message of system) {
+      if (used >= systemBudget) break;
+      const remaining = Math.max(systemBudget - used, 0);
+      const content = String(message.content || '').slice(0, remaining);
+      if (!content) continue;
+      boundedSystem.push({ ...message, content });
+      used += content.length;
+    }
+
+    const blocks = [];
+    for (let i = 0; i < body.length; i += 1) {
+      const message = body[i];
+      if (message.role === 'assistant' && Array.isArray(message.tool_calls)) {
+        const group = [message];
+        let j = i + 1;
+        while (j < body.length && body[j].role === 'tool') group.push(body[j++]);
+        blocks.push(group);
+        i = j - 1;
+      } else {
+        blocks.push([message]);
+      }
+    }
+
+    const selected = [];
+    for (let i = blocks.length - 1; i >= 0; i -= 1) {
+      const block = blocks[i];
+      const blockChars = block.reduce((sum, item) => sum + String(item.content || '').length, 0);
+      if (selected.length > 0 && used + blockChars > maxChars) continue;
+      if (selected.length === 0 && used + blockChars > maxChars) {
+        const last = block[block.length - 1];
+        const remaining = Math.max(maxChars - used, 1);
+        selected.unshift([{ ...last, content: String(last.content || '').slice(-remaining) }]);
+        used = maxChars;
+        break;
+      }
+      selected.unshift(block);
+      used += blockChars;
+      if (used >= maxChars) break;
+    }
+    return [...boundedSystem, ...selected.flat()];
   }
 
   /**
@@ -232,7 +388,11 @@ class AiService {
   /** 将早期消息列表 hash 为短字符串，用于 compaction 缓存 key */
   _compactHash(messages) {
     if (!messages || !messages.length) return 'empty';
-    return messages.map(m => `${m.role}:${(m.content || '').slice(0, 80)}`).join('|');
+    const normalized = messages.map((message) => ({
+      role: message?.role || 'user',
+      content: String(message?.content || ''),
+    }));
+    return crypto.createHash('sha256').update(JSON.stringify(normalized), 'utf8').digest('hex');
   }
 
   // ========== 非流式（经队列） ==========
@@ -246,8 +406,8 @@ class AiService {
     // 滚动摘要：先压缩 history，再进队列
     const compacted = await this._compactHistory(history);
 
-    const release = await llmQueue.acquire();
-    logEvent('info', 'ai_queue_slot_acquired', { pending: llmQueue.pending });
+    const release = await llmQueue.acquire(opts.signal);
+    logEvent('info', 'ai_queue_slot_acquired', { pending: llmQueue.pending, running: llmQueue.running });
     try {
       return await this._doGetCompletion(message, compacted, opts);
     } finally {
@@ -260,7 +420,7 @@ class AiService {
     try {
       return await this._requestProvider(this.primary, message, history, opts);
     } catch (err) {
-      if (!this.fallback) throw err;
+      if (err.name === 'AbortError' || opts.signal?.aborted || !this.fallback) throw err;
       logEvent('warn', 'ai_primary_provider_failed_switch', { error: err.message });
       return await this._requestProvider(this.fallback, message, history, opts);
     }
@@ -276,7 +436,7 @@ class AiService {
       const path = provider.anthropicMode ? '/v1/messages' : '/v2/chat/completions';
       const payload = {
         model: provider.model,
-        messages: opts.messages || this._buildMessages(message, history),
+        messages: this._boundMessages(opts.messages || this._buildMessages(message, history)),
         max_tokens: provider.maxTokens,
         temperature: provider.temperature,
         stream: false,
@@ -299,7 +459,7 @@ class AiService {
       logEvent('info', 'ai_request', { host: options.hostname, path: options.path, model: provider.model, bodyLen: body.length, tools: payload.tools?.length || 0 });
 
       const startTime = Date.now();
-      const result = await request(options, body);
+      const result = await request(options, body, opts.signal);
       const latency = Date.now() - startTime;
       metrics.recordLatency('ai', latency);
 
@@ -355,8 +515,8 @@ class AiService {
     }
 
     // 排队等待 LLM 槽位，整个流式过程占用一个槽位
-    const release = await llmQueue.acquire();
-    logEvent('info', 'ai_stream_queue_slot_acquired', { pending: llmQueue.pending });
+    const release = await llmQueue.acquire(opts.signal);
+    logEvent('info', 'ai_stream_queue_slot_acquired', { pending: llmQueue.pending, running: llmQueue.running });
 
     try {
       yield* this._doGetCompletionStream(message, compacted, opts);
@@ -396,7 +556,7 @@ class AiService {
   _buildStreamPayload(provider, message, history, opts = {}) {
     const payload = {
       model: provider.model,
-      messages: opts.messages || this._buildMessages(message, history),
+      messages: this._boundMessages(opts.messages || this._buildMessages(message, history)),
       max_tokens: provider.maxTokens,
       temperature: provider.temperature,
       stream: true,
@@ -464,6 +624,7 @@ class AiService {
     let buf = '';
     let streamUsage = null;
     let usageRecorded = false;
+    let terminalSeen = false;
     const decoder = new StringDecoder('utf8');
     // tool_calls 增量拼接（OpenAI 兼容流式：delta.tool_calls 按 index 分片）
     const toolCallMap = new Map();
@@ -486,6 +647,7 @@ class AiService {
         if (!t.startsWith('data:')) continue;
         const d = t.slice(5).trim();
         if (d === '[DONE]') {
+          terminalSeen = true;
           recordUsage();
           yield { content: '', done: true, usage: streamUsage || null, tool_calls: this._assembleToolCalls(toolCallMap, hasToolCalls, needsTools) };
           return;
@@ -497,7 +659,10 @@ class AiService {
           let done = false;
           if (provider.anthropicMode) {
             if (j.type === 'content_block_delta' && j.delta?.text) content = j.delta.text;
-            if (j.type === 'message_stop' || j.type === 'message_delta') done = true;
+            if (j.type === 'message_stop' || j.type === 'message_delta') {
+              done = true;
+              terminalSeen = true;
+            }
           } else {
             const choice = j.choices?.[0];
             content = choice?.delta?.content || '';
@@ -528,22 +693,37 @@ class AiService {
         }
       }
     }
-    // 冲刷 decoder 中残留的不完整多字节序列
+    // 冲刷 decoder 中残留的不完整多字节序列；最后一行可能没有换行符。
     buf += decoder.end();
     if (buf.trim()) {
       const t = buf.trim();
-      if (t.startsWith('data:') && t.slice(5).trim() !== '[DONE]') {
-        try {
-          const j = JSON.parse(t.slice(5).trim());
-          const content = provider.anthropicMode
-            ? (j.delta?.text || '')
-            : (j.choices?.[0]?.delta?.content || '');
-          if (content) yield { content, done: false };
-        } catch { /* ignore */ }
+      if (t.startsWith('data:')) {
+        const data = t.slice(5).trim();
+        if (data === '[DONE]') {
+          terminalSeen = true;
+        } else {
+          try {
+            const j = JSON.parse(data);
+            if (j.usage) streamUsage = j.usage;
+            const content = provider.anthropicMode
+              ? (j.type === 'content_block_delta' ? (j.delta?.text || '') : (j.delta?.text || ''))
+              : (j.choices?.[0]?.delta?.content || '');
+            if (content) yield { content, done: false };
+            if (provider.anthropicMode && (j.type === 'message_stop' || j.type === 'message_delta')) {
+              terminalSeen = true;
+            }
+          } catch (err) {
+            logEvent('warn', 'ai_stream_trailing_sse_parse_failed', { error: err.message });
+          }
+        }
       }
     }
+    if (!terminalSeen) {
+      recordUsage();
+      throw new IncompleteStreamError(provider.anthropicMode ? 'Anthropic' : 'OpenAI');
+    }
     recordUsage();
-    yield { content: '', done: true, tool_calls: this._assembleToolCalls(toolCallMap, hasToolCalls, needsTools) };
+    yield { content: '', done: true, usage: streamUsage || null, tool_calls: this._assembleToolCalls(toolCallMap, hasToolCalls, needsTools) };
   }
 
   /**
@@ -587,4 +767,13 @@ class AiService {
 // 单例实例：全项目共享一个 AiService，复用配置和连接
 const aiService = new AiService();
 
-module.exports = { AiService, aiService, metrics };
+module.exports = {
+  AiService,
+  IncompleteStreamError,
+  QueueOverflowError,
+  QueueWaitTimeoutError,
+  RequestQueue,
+  aiService,
+  llmQueue,
+  metrics,
+};

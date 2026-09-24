@@ -8,6 +8,7 @@ const resultMapper = require('./rag-result-mapper.service');
 const queryRewrite = require('./rag-query-rewrite.service');
 const { QueryCache } = require('../utils/query-cache');
 const { SemanticCache } = require('./rag-semantic-cache.service');
+const { getCorpusVersion } = require('./corpus-version.service');
 
 // 检索结果缓存（模块级单例）：tracer/noCache/category 存在时不缓存
 const retrievalCache = new QueryCache(
@@ -21,6 +22,10 @@ const semanticCache = new SemanticCache({
   ttlMs: config.rag.cacheTtlMs || 300000,
   threshold: config.rag.semanticCacheThreshold || 0.95,
 });
+
+const retrievalCacheKey = (query, searchTopK) => (
+  `c${getCorpusVersion()}|${String(query || '').trim().toLowerCase()}|k${searchTopK}`
+);
 
 /**
  * 检索管道：向量召回（Qdrant 混合检索）→ 父段聚合 → 多路检索合并。
@@ -44,7 +49,7 @@ async function retrieveCandidates(svc, query, options = {}) {
   const canCache = config.rag.cacheEnabled && !options.noCache && !options.category;
   if (canCache) {
     // 键含 topK：不同 topK 的调用共享条目会拿到截断长度错误的候选池
-    const cacheKey = `${String(query || '').trim().toLowerCase()}|k${searchTopK}`;
+    const cacheKey = retrievalCacheKey(query, searchTopK);
     const cached = retrievalCache.get(cacheKey);
     if (cached) {
       // 返回 trace 拷贝：dualRetrieve 会向 trace 追加 queryRewrite/queryDecompose 等字段，
@@ -83,6 +88,7 @@ async function retrieveCandidates(svc, query, options = {}) {
   let queryEmbedding = null;
   // 语义缓存开关按次读取（评测/测试可运行时切换）
   const semanticCacheEnabled = config.rag.semanticCacheEnabled === true;
+  const corpusVersion = getCorpusVersion();
 
   try {
     const embeddingStart = Date.now();
@@ -110,7 +116,7 @@ async function retrieveCandidates(svc, query, options = {}) {
     // 语义缓存：精确缓存 miss 后按查询向量找近义问题，直接复用其检索候选池。
     // 候选池只是 reranker 的召回池（reranker 仍按原问题打分），共享不影响精度
     if (semanticCacheEnabled && canCache && queryEmbedding?.dense) {
-      const hit = semanticCache.lookup(queryEmbedding.dense);
+      const hit = semanticCache.lookup(queryEmbedding.dense, { corpusVersion });
       if (hit) {
         trace.semanticCache = { hit: true, matchedQuery: hit.query, similarity: hit.similarity };
         trace.fused = {
@@ -194,16 +200,17 @@ async function retrieveCandidates(svc, query, options = {}) {
   // 若写入会让同一查询在 TTL 内全部命中空缓存、即便故障已恢复也答"无可靠来源"
   //（语义缓存本来就有 candidates.length > 0 闸门，精确缓存此前漏了）
   if (canCache && candidates.length > 0) {
-    const cacheKey = `${String(query || '').trim().toLowerCase()}|k${searchTopK}`;
+    const cacheKey = retrievalCacheKey(query, searchTopK);
     retrievalCache.set(cacheKey, {
       candidates,
+      corpusVersion,
       // trace 快照：调用方（dualRetrieve）会向返回的 trace 追加字段，不能让它们写进缓存
       trace: { ...trace },
       rewrittenQuery: trace?.rewrittenQuery || null,
     });
     // 语义缓存写入：同一份候选池供近义问题复用
     if (semanticCacheEnabled && queryEmbedding?.dense) {
-      semanticCache.store(query, queryEmbedding.dense, { candidates });
+      semanticCache.store(query, queryEmbedding.dense, { candidates, corpusVersion });
     }
   }
 
@@ -512,4 +519,17 @@ async function dualRetrieve(svc, message, history, options = {}) {
   return { candidates: mergedCandidates, trace, rewrittenQuery };
 }
 
-module.exports = { retrieveCandidates, retrieveParentCandidates, aggregateParentCandidates, fuseRetrievalResults, dualRetrieve, semanticCache };
+const invalidateRetrievalCaches = () => {
+  retrievalCache.clear();
+  semanticCache.clear();
+};
+
+module.exports = {
+  retrieveCandidates,
+  retrieveParentCandidates,
+  aggregateParentCandidates,
+  fuseRetrievalResults,
+  dualRetrieve,
+  invalidateRetrievalCaches,
+  semanticCache,
+};

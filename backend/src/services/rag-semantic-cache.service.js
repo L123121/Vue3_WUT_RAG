@@ -60,7 +60,7 @@ class SemanticCache {
    * 按查询向量找近义条目
    * @returns {{ value: any, query: string, similarity: number } | null}
    */
-  lookup(vector) {
+  lookup(vector, { corpusVersion } = {}) {
     if (!vector || this._entries.length === 0) {
       this._misses++;
       return null;
@@ -69,6 +69,8 @@ class SemanticCache {
     let bestIndex = -1;
     let bestSim = 0;
     for (let i = 0; i < this._entries.length; i++) {
+      const entryVersion = this._entries[i].value?.corpusVersion;
+      if (corpusVersion !== undefined && entryVersion !== corpusVersion) continue;
       const sim = SemanticCache.cosine(vector, this._entries[i].vector);
       if (sim > bestSim) {
         bestSim = sim;

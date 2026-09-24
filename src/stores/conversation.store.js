@@ -20,6 +20,7 @@ import {
   createLocalConversation,
   getMessageText,
 } from '../utils/chatHelpers.js';
+import { mergeMessageLists } from '../utils/messageFragments.js';
 import {
   loadCache,
   saveCache,
@@ -290,7 +291,10 @@ export const useConversationStore = defineStore('conversation', () => {
     const cachedConversations = Array.isArray(cached?.conversations) ? cached.conversations : [];
     if (cachedConversations.length === 0) return false;
 
-    conversations.value = cachedConversations;
+    conversations.value = cachedConversations.map((conversation) => ({
+      ...conversation,
+      messages: normalizeMessages(conversation.messages || []),
+    }));
     const preferredId = cached.currentId || currentConversationId.value;
     currentConversationId.value = cachedConversations.some((conv) => conv.id === preferredId)
       ? preferredId
@@ -339,7 +343,10 @@ export const useConversationStore = defineStore('conversation', () => {
         const serverIds = new Set(data.map(c => c.id));
         const serverConvs = data.map((conv) => ({
           ...conv,
-          messages: cachedById.get(conv.id)?.messages || [],
+          messages: mergeMessageLists(
+            cachedById.get(conv.id)?.messages || [],
+            conv.messages || [],
+          ),
         }));
         // 只保留真正的 local_ 会话；失效的 conv_ 说明服务端已删除，不能重新合并回来。
         const localOnly = cachedConversations.filter((conv) =>
@@ -451,11 +458,10 @@ export const useConversationStore = defineStore('conversation', () => {
       const index = conversations.value.findIndex((c) => c.id === conversationId);
       if (index !== -1 && conv) {
         const fetched = normalizeMessages(conv.messages);
-        // 本地列表可能包含同步失败期间未上传的消息（比服务端更长），
-        // 服务端也可能有其他端新增的消息（比本地更长）。
-        // 取更长的一侧：既保住未同步的尾部消息，也不丢其他端的新消息。
+        // 本地列表可能包含同步失败期间未上传的消息，服务端也可能有其他端新增消息；
+        // 按消息列表长度选择主序列，并对同 ID 消息保留更丰富的 Fragment 记录。
         const local = normalizeMessages(conversations.value[index].messages || []);
-        const merged = local.length > fetched.length ? local : fetched;
+        const merged = mergeMessageLists(local, fetched);
         conversations.value[index].messages = merged.length > 0 ? merged : [createWelcomeMessage()];
         conversations.value[index].title = conv.title;
         // 消息整体替换，重建该会话的索引

@@ -247,6 +247,7 @@ class AgenticRagService {
         }
       }
     } catch (error) {
+      if (error.code === "INCOMPLETE_STREAM") throw error;
       if (error.name === "AbortError" || options.signal?.aborted) throw error;
       trace.finishReason = "generation_error";
       trace.fallbackReason = error.message;

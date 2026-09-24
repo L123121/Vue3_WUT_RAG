@@ -21,6 +21,11 @@ export const getWikiEntry = async (idOrSlug) => {
   return response.json();
 };
 
+export const getWikiEntryRevisions = async (docId) => {
+  const response = await apiGet(`/wiki/entries/${encodeURIComponent(docId)}/revisions`);
+  return response.json();
+};
+
 export const setWikiEntryVisibility = async (docId, { visible, allowSimulated = false }) => {
   const response = await apiPut(`/wiki/entries/${encodeURIComponent(docId)}/visibility`, {
     visible,

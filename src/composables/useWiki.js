@@ -1,6 +1,6 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { getWikiEntries, getWikiEntry, setWikiEntryVisibility } from '../api/wiki.js';
+import { getWikiEntries, getWikiEntry, getWikiEntryRevisions, setWikiEntryVisibility } from '../api/wiki.js';
 import { useAuthStore } from '../stores/auth.store.js';
 import { useToastStore } from '../stores/toast.store.js';
 import { buildWikiTree, flattenWikiEntries, findRelatedEntries } from '../utils/wikiTree.js';
@@ -215,6 +215,8 @@ export function useWikiEntry() {
   const loadError = ref('');
   const notFound = ref(false);
   const busy = ref(false);
+  const revisions = ref([]);
+  const revisionsLoading = ref(false);
 
   const isAdmin = computed(() => Boolean(auth.isAdmin));
   const docId = computed(() => entry.value?.id || String(route.params.idOrSlug || ''));
@@ -225,7 +227,32 @@ export function useWikiEntry() {
     if (position.value < 0 || position.value >= siblings.value.length - 1) return null;
     return siblings.value[position.value + 1];
   });
-  const related = computed(() => findRelatedEntries(siblings.value, docId.value));
+  // 编译期互链优先：后端在词条上架时已用 LLM 从候选词条里选好关联（带推荐理由），
+  // 比查询期按分类聚类更准；为空（关闭/未编译/暂无关联）时才回退本地分类推荐，
+  // 保证互链能力关闭时页面不会露出空白
+  const compiledRelated = computed(() => (Array.isArray(entry.value?.relatedPages) ? entry.value.relatedPages : []));
+  const related = computed(() => (
+    compiledRelated.value.length > 0
+      ? compiledRelated.value
+      : findRelatedEntries(siblings.value, docId.value)
+  ));
+
+  const loadRevisions = async (id = docId.value) => {
+    if (!isAdmin.value || !id) {
+      revisions.value = [];
+      return;
+    }
+    revisionsLoading.value = true;
+    try {
+      const result = await getWikiEntryRevisions(id);
+      revisions.value = result?.data?.revisions || [];
+    } catch (error) {
+      revisions.value = [];
+      console.warn('[wiki] 加载修订历史失败:', error);
+    } finally {
+      revisionsLoading.value = false;
+    }
+  };
 
   const load = async () => {
     loading.value = true;
@@ -245,6 +272,7 @@ export function useWikiEntry() {
         throw Object.assign(new Error(result?.message || '词条不存在或尚未上架'), { status: 404 });
       }
       entry.value = result.data;
+      await loadRevisions(entry.value.id);
     } catch (error) {
       notFound.value = error.status === 404 || error.status === 403;
       loadError.value = error.message || '加载词条失败';
@@ -258,8 +286,10 @@ export function useWikiEntry() {
     if (!entry.value?.id || busy.value) return;
     busy.value = true;
     try {
-      const result = await setWikiEntryVisibility(entry.value.id, { visible: !entry.value.visible });
-      toast.success(result?.message || (entry.value.visible ? '词条已下架' : '词条已上架'));
+      const shouldPublishCurrentRevision = entry.value.stale === true;
+      const targetVisible = shouldPublishCurrentRevision ? true : !entry.value.visible;
+      const result = await setWikiEntryVisibility(entry.value.id, { visible: targetVisible });
+      toast.success(result?.message || (shouldPublishCurrentRevision ? '已重新审核并上架' : (entry.value.visible ? '词条已下架' : '词条已上架')));
       invalidateWikiEntries();
       await load();
     } catch (error) {
@@ -281,6 +311,8 @@ export function useWikiEntry() {
     notFound,
     isAdmin,
     busy,
+    revisions,
+    revisionsLoading,
     prevEntry,
     nextEntry,
     related,

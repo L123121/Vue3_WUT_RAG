@@ -13,7 +13,10 @@ import 'highlight.js/styles/atom-one-dark.css';
 
 // Worker for large content (>2000 chars)
 const WORKER_THRESHOLD = 2000;
-const { renderInWorker } = useMarkdownWorker();
+const {
+  renderInWorker,
+  recordStaleResult,
+} = useMarkdownWorker();
 // highlightVersion（模块级共享）：动态语言异步注册完成后触发所有气泡重渲染
 const { highlightVersion } = useCodeHighlighter();
 
@@ -76,7 +79,10 @@ const renderCitations = (html) => applyCitationBadges(html, props.sources);
       isLoadingWorker.value = true;
       try {
         const html = await renderInWorker(content);
-        if (isStale()) return;
+        if (isStale()) {
+          recordStaleResult();
+          return;
+        }
         if (html) {
           renderedContent.value = wrapHighlight(renderCitations(DOMPurify.sanitize(html, { ALLOWED_TAGS, ALLOWED_ATTR })));
           lastRenderedAt.value = content;
@@ -87,7 +93,10 @@ const renderCitations = (html) => applyCitationBadges(html, props.sources);
         }
       } catch {
         // Worker 失败/超时/不可用 → 主线程兜底（与原 fallback 行为一致）
-        if (isStale()) return;
+        if (isStale()) {
+          recordStaleResult();
+          return;
+        }
         renderedContent.value = renderMarkdownMain(content);
         lastRenderedAt.value = content;
       }
@@ -107,7 +116,13 @@ const renderCitations = (html) => applyCitationBadges(html, props.sources);
 updateRender();
 
 watch(
-  () => [props.content, highlightVersion.value],
+  () => [
+    props.content,
+    highlightVersion.value,
+    (Array.isArray(props.sources) ? props.sources : [])
+      .map((source) => `${source?.docId || source?.id || source?.title || ''}:${source?.title || ''}`)
+      .join('|'),
+  ],
   () => {
     if (throttleTimer) return;
     throttleTimer = setTimeout(() => {

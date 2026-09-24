@@ -3,13 +3,15 @@
 /**
  * Agent 工具注册表（V2.0，移植自存档版裁剪）
  *
- * 只保留两个零外部依赖的工具：
+ * 内置工具：
  *   - search_knowledge_base：知识库 RAG 检索（复用 rag.service）
+ *   - read_tool_artifact：读取当前 Agent 运行产生的受控大型工具结果工件
  *   - calculate：数学计算（mathjs 安全求值）
  * 教务系工具（查成绩/课表等）因当前项目无教务系统接入，不移植。
  */
 
 const { ToolRegistry, TOOL_SOURCES } = require('./tool-registry.service');
+const { readToolSpill } = require('./context-compaction.service');
 const { RagService } = require('./rag.service');
 const { aiService } = require('./ai.service');
 const { create, all } = require('mathjs');
@@ -77,6 +79,56 @@ const builtinTools = [
         return `知识库检索失败：${err.message}`;
       }
     }
+  },
+
+  {
+    name: 'read_tool_artifact',
+    description: '读取当前 Agent 运行产生的大型工具结果工件。仅当工具结果提供 artifactId 且需要查看被截断的后续内容时使用；不要猜测 artifactId，也不要读取任意路径。',
+    category: '工具工件',
+    source: TOOL_SOURCES.BUILTIN,
+    timeoutMs: TIMEOUT_LOCAL,
+    parameters: {
+      type: 'object',
+      properties: {
+        artifactId: {
+          type: 'string',
+          description: '工具结果中提供的 opaque artifactId',
+          maxLength: 120,
+        },
+        offset: {
+          type: 'integer',
+          description: '从结果正文的字符偏移开始读取，默认 0',
+        },
+        limit: {
+          type: 'integer',
+          description: '读取字符数，最大 4000，默认 4000',
+        },
+      },
+      required: ['artifactId'],
+      additionalProperties: false,
+    },
+    parallelSafe: true,
+    sideEffect: false,
+    handler: async (args, context = {}) => {
+      const result = await readToolSpill(args.artifactId, context, {
+        offset: args.offset,
+        limit: args.limit,
+      });
+      return {
+        ok: result.ok,
+        content: result.ok
+          ? `${result.content}\n\n[工件 ${result.artifactId}，区间 ${result.offset}-${result.offset + result.content.length}/${result.totalChars}，${result.hasMore ? '仍有后续内容' : '已到末尾'}]`
+          : result.content,
+        uiSummary: result.ok ? `已读取工具工件 ${result.artifactId}` : '工具工件读取失败',
+        data: result.ok ? {
+          artifactId: result.artifactId,
+          offset: result.offset,
+          limit: result.limit,
+          totalChars: result.totalChars,
+          hasMore: result.hasMore,
+        } : null,
+      };
+    },
   },
 
   {

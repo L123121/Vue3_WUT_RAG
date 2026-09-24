@@ -32,7 +32,7 @@ function buildPrompt(svc, message, context) {
  * @returns {Promise<{ reply: string, aiLatency: number, llmUsage: Object|null,
  *   llmModel: string, processCard: Object|null, grounding: Object|null }>}
  */
-async function generateAnswer(svc, { message, history, pipeline, tracer }) {
+async function generateAnswer(svc, { message, history, pipeline, tracer, options = {} }) {
   let reply = '';
   let aiLatency = 0;
   let llmUsage = null;
@@ -42,7 +42,7 @@ async function generateAnswer(svc, { message, history, pipeline, tracer }) {
     const aiStart = Date.now();
     try {
       const { prompt, isProcess } = buildPrompt(svc, message, pipeline.context);
-      const llmResult = await svc.aiService.getCompletion(prompt, history);
+      const llmResult = await svc.aiService.getCompletion(prompt, history, options);
       aiLatency = Date.now() - aiStart;
       svc._recordTraceStage(tracer, 'llm', aiStart, true, {
         model: config.ai.model || 'step-3.7-flash',
@@ -157,6 +157,7 @@ async function* streamAnswer(svc, { message, history, options, pipeline, tracer,
       yield { type: 'content', content: chunk.content, done: false };
     }
   } catch (err) {
+    if (err.code === 'INCOMPLETE_STREAM') throw err;
     tracer?.markFallback('rag_pipeline_error');
     svc._recordTraceStage(tracer, 'llm', aiStart, false, { model: config.ai.model || 'step-3.7-flash' }, err);
     logEvent('warn', 'rag_stream_fallback', { error: err.message });

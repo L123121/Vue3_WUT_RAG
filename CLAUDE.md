@@ -100,12 +100,12 @@ chat.store（聚合层）→ 页面统一接口
   │    其余模糊意图 → null（不硬路由，减少误判面）
   ├─ classify（LLM 分类兜底，INTENT_CLASSIFY_ENABLED=true 才启用）
   │    15s 超时 + JSON 解析失败 → 兜底，不阻塞
-  └─ 兜底 _fallbackRoute → route: rag（校园问答主场景，RAG 内部自带降级）
+  └─ 兜底 _fallbackRoute → route: chat（未命中高置信知识意图时不强制检索）
   ↓
   ConversationOrchestrator 注入持久记忆并统一编排：
   route=chat  → AiService 纯 LLM
   route=agent → AgentService 工具调度（L2 有界多轮）
-  route=rag   → RagService 检索管道（默认兜底）
+  route=rag   → RagService 检索管道（Wiki/Qdrant 混合，Wiki stale 时自动排除）
   SSE 事件：intent / tool_call / tool_result / trace（前端展示"自动路由：知识库检索"）
 ```
 
@@ -128,6 +128,7 @@ chat.store（聚合层）→ 页面统一接口
 | 工具 | 能力 | 超时 |
 |------|------|------|
 | `search_knowledge_base` | 复用 rag.service 全链路检索（支持 category 过滤） | 15s |
+| `read_tool_artifact` | 按 opaque artifactId 读取当前运行的大型工具结果 | 3s |
 | `calculate` | mathjs 安全求值（模块级 create(all)，防注入） | 3s |
 
 教务系工具（查成绩/课表等）因无教务系统接入未移植。
@@ -183,10 +184,10 @@ chat.store（聚合层）→ 页面统一接口
 - `judge.service.js` — LLM-as-judge 独立 Key，4 指标合并 1 次请求
 - `prometheus-metrics.service.js` — Prometheus 文本格式渲染（零依赖）：运营计数器 + 有界原始延迟样本现场分桶直方图 + 进程/事件循环自观测，`/api/metrics/prometheus` env 门控 + token 校验，抓取方放外部
 - `otel-tracing.service.js` — OTLP trace 导出（env 门控，`OTEL_EXPORTER_OTLP_ENDPOINT` 设置即启用）：手动埋点三处——middleware HTTP 根 span（http.* 语义属性）、`RagTracer.recordStage` 单点接线全部 RAG 阶段子 span（显式时间戳）、ai.service 非流式/流式 LLM span（gen_ai.* 属性）；关闭时 `@opentelemetry/api` 走 Noop，零依赖加载
-- `intent-router.service.js` — 意图路由（V2.0）：fastRoute 零成本关键词 + LLM 分类兜底（默认关）+ 兜底 rag
-- `wiki.service.js` — 校园百科治理层：以知识库 `document:<docId>` 为唯一正文源，服务端解析 front-matter 与模拟语料判定（禁止上架）、上下架元数据与 slug 别名存 `wiki:entries`/`wiki:slugs` 两个 hash（不新建表、不碰 `document.service` 参与 contentHash 去重的写入路径）
-- `agent.service.js` — Agent 工具调度（V2.0）：L2 有界多轮（maxToolRounds=2 + 无进展检测）+ L3 会话记忆摘要 + L4 agent tracer
-- `agent-tools.js` — Agent 工具注册表：search_knowledge_base（复用 RAG）+ calculate（mathjs 安全求值）
+- `intent-router.service.js` — 意图路由（V2.0）：fastRoute 零成本关键词 + LLM 分类兜底（默认关）+ 未命中时 chat 兜底
+- `wiki.service.js` — 校园百科治理层：以知识库 `document:<docId>` 为唯一正文源，服务端解析 front-matter、正文修订/stale、模拟语料判定（禁止上架）、上下架元数据与 slug 别名存 `wiki:entries`/`wiki:slugs` 两个 hash；RAG 命中时可与 Qdrant 候选混合
+- `agent.service.js` — Agent 工具调度（V2.0）：L2 有界多轮（maxToolRounds=2 + 无进展检测）+ L3 会话记忆摘要 + 工件落盘/按需读取 + L4 agent tracer
+- `agent-tools.js` — Agent 工具注册表：search_knowledge_base + read_tool_artifact + calculate（mathjs 安全求值）
 - `conversation-orchestrator.service.js` — Chat/RAG/Agent 统一编排、持久记忆注入、失败降级与结果保存
 - `tool-registry.service.js` — JSON Schema 参数校验、取消传播、超时闸门与工具元数据
 - `tool-registry.service.js` — 工具注册器（TOOL_SOURCES.BUILTIN，可扩展）
@@ -327,9 +328,9 @@ chat.store（聚合层）→ 页面统一接口
 
 **15. Agent V2.0：意图路由 + 工具调度（2026-08-14）**
 - 背景：2026-07-21 曾移除早期 Agent 系统（存档 `D:\武理小精灵_agent_存档`，当时因工具不全/延迟高回归纯 RAG）；V2.0 重新引入并裁剪
-- 意图路由（`intent-router.service.js`）：fastRoute 零成本关键词（问候→chat、多步任务→agent、明确计算→agent/calculate，其余不硬路由防误判）+ LLM 分类兜底（默认关，`INTENT_CLASSIFY_ENABLED`）+ 兜底 rag；`INTENT_ROUTING_ENABLED=false` 退回原链路
+- 意图路由（`intent-router.service.js`）：fastRoute 零成本关键词（问候→chat、多步任务→agent、明确计算→agent/calculate，其余不硬路由防误判）+ LLM 分类兜底（默认关，`INTENT_CLASSIFY_ENABLED`）+ 未命中时 chat；`INTENT_ROUTING_ENABLED=false` 退回原链路
 - L2 有界多轮（`agent.service.js`）：maxToolRounds=2（默认）+ 无进展检测（连续 2 轮相同签名强制收尾）+ 收尾生成不带 tools + 决策/执行超时 15s，杜绝无限循环
-- 工具裁剪：只保留 `search_knowledge_base`（复用 RAG 全链路）+ `calculate`（mathjs 安全求值），教务系工具无接入不移植
+- 工具裁剪：`search_knowledge_base` + `read_tool_artifact` + `calculate`，大型结果使用 opaque 工件和 owner/run 校验；教务系工具无接入不移植
 - L3 会话记忆（buildMemorySummary）+ L4 agent tracer（轮次/工具/耗时/收尾原因随 SSE 下发）
 - 回退开关：`AGENT_TOOL_ENABLED=false` 时 agent 路由自动进入 RAG，便于出现上游异常时快速止损
 

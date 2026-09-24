@@ -294,6 +294,7 @@ onBeforeUnmount(() => speechPlayer.stop());
       :is-connected="messageStore.isConnected"
       :is-reconnecting="messageStore.isReconnecting"
       :reconnect-attempt="messageStore.reconnectAttempt"
+      :conversation-id="conversationStore.currentConversationId"
       @send="handleSend"
       @error="handleError"
       @command="handleCommand"

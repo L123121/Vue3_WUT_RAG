@@ -10,9 +10,12 @@ const router = Router();
 router.use(requireAuth);
 
 router.get('/entries', wikiController.listEntries);
+router.get('/entries/:docId/revisions', requireAdmin, wikiController.getEntryRevisions);
 router.get('/entries/:idOrSlug', wikiController.getEntry);
 
 // 上架/下架仅管理员
 router.put('/entries/:docId/visibility', requireAdmin, wikiController.setEntryVisibility);
+// 手动重算互链（编译期产物，默认由上架异步触发，这里给管理员一个显式入口）
+router.post('/entries/:docId/relations/recompile', requireAdmin, wikiController.recompileEntryRelations);
 
 module.exports = router;

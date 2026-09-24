@@ -12,6 +12,7 @@ describe('application container', () => {
       intentRouter: { name: 'intent' },
       agentService: { name: 'agent' },
       agenticRagService: { name: 'agentic-rag' },
+      decisionModel: { name: 'decision' },
       conversationOrchestrator: { name: 'conversation' },
       audioService: { name: 'audio' },
     };

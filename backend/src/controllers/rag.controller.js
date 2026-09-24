@@ -7,7 +7,13 @@ const { DocumentService } = require('../services/document.service');
 const { redis: store } = require('../services/memory-store');
 const { MemoryService } = require('../services/memory.service');
 const { successResponse, errorResponse } = require('../utils/response');
-const { writeStreamEvent } = require('../utils/sse-events');
+const {
+  createStreamContext,
+  writeRunCompleted,
+  writeRunFailed,
+  writeRunStarted,
+  writeStreamEvent,
+} = require('../utils/sse-events');
 const { upload, parseFile, cleanupFile } = require('../services/file-upload.service');
 const { recordAudit } = require('../services/quality-governance.service');
 const { vectorStore: vectorStoreSingleton } = require('../services/vector-store-qdrant.service');
@@ -113,6 +119,9 @@ function getRerankOverrides(req) {
  * RAG 增强聊天接口
  */
 const ragChat = async (req, res, next) => {
+  const abortController = new AbortController();
+  const onClientClose = () => abortController.abort();
+  res.once('close', onClientClose);
   try {
     const { message, history, category } = req.body;
 
@@ -120,7 +129,11 @@ const ragChat = async (req, res, next) => {
       return errorResponse(res, '消息内容不能为空', 400);
     }
 
-    const result = await ragService.chat(message, history || [], getTraceOptions(req, { category, ...getRerankOverrides(req) }));
+    const result = await ragService.chat(message, history || [], getTraceOptions(req, {
+      category,
+      ...getRerankOverrides(req),
+      signal: abortController.signal,
+    }));
     res.setHeader('X-Trace-Id', result.traceId || req.traceId);
     void recordAudit({
       question: message,
@@ -133,8 +146,11 @@ const ragChat = async (req, res, next) => {
     successResponse(res, result, 'RAG 处理完成');
     saveChatMemory(req.userId, message, result.reply);
   } catch (error) {
+    if (abortController.signal.aborted && error.name === 'AbortError') return;
     logEvent('error', 'rag_controller_error', { error: error.message, stack: error.stack });
     next(error);
+  } finally {
+    res.removeListener('close', onClientClose);
   }
 };
 
@@ -144,12 +160,14 @@ const ragChat = async (req, res, next) => {
 const ragChatStream = async (req, res, next) => {
   let abortController = null;
   let onClientClose = null;
+  let streamContext = null;
   const cleanupClientClose = () => {
     if (onClientClose) res.removeListener('close', onClientClose);
   };
 
   try {
-    const { message, history, category } = req.body;
+    const body = req.body || {};
+    const { message, history, category } = body;
 
     if (!message) {
       return res.status(400).json({ error: '消息内容不能为空' });
@@ -163,6 +181,12 @@ const ragChatStream = async (req, res, next) => {
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
+    streamContext = createStreamContext({
+      streamVersion: body.streamVersion,
+      runId: body.runId,
+      attempt: body.attempt,
+      traceId: req.traceId,
+    });
     // 客户端断开 → 中止上游 LLM 流（注意监听 res 的 close，req 的 close 读完请求体即触发）
     abortController = new AbortController();
     onClientClose = () => abortController.abort();
@@ -172,6 +196,7 @@ const ragChatStream = async (req, res, next) => {
       ...getRerankOverrides(req),
       signal: abortController.signal,
     });
+    writeRunStarted(res, streamContext, { conversationId: streamOptions.conversationId });
 
     for await (const chunk of ragService.chatStream(message, history || [], streamOptions)) {
       // 评测审计副作用：在统一写出口之外就地采集（SSE 事件映射本身在 utils/sse-events.js）
@@ -182,9 +207,10 @@ const ragChatStream = async (req, res, next) => {
       }
       if (chunk.type === 'content' && !chunk.done) fullReply += chunk.content || '';
 
-      writeStreamEvent(res, chunk, req.traceId);
+      writeStreamEvent(res, chunk, streamContext);
     }
 
+    writeRunCompleted(res, streamContext);
     cleanupClientClose();
     res.end();
 
@@ -205,7 +231,8 @@ const ragChatStream = async (req, res, next) => {
     logEvent('error', 'rag_stream_error', { error: error.message, stack: error.stack });
     if (!res.headersSent) return next(error);
     try {
-      res.write(`data: ${JSON.stringify({ traceId: req.traceId, error: error.message })}\n\n`);
+      if (streamContext?.streamVersion === 1) writeRunFailed(res, streamContext, error);
+      else res.write(`data: ${JSON.stringify({ traceId: req.traceId, error: error.message })}\n\n`);
       res.end();
     } catch {
       // 连接已关闭，忽略
@@ -563,6 +590,27 @@ const uploadDocument = async (req, res, next) => {
 };
 
 const uploadMiddleware = upload.single('file');
+let reindexPromise = null;
+
+const reindexDocuments = async (req, res, next) => {
+  if (reindexPromise) return errorResponse(res, '已有重索引任务正在运行，请稍后再试', 409);
+  const mode = req.body?.mode === 'incremental' ? 'incremental' : 'rebuild';
+  reindexPromise = (async () => {
+    const docs = await documentService._allDocs();
+    documentService._markCorpusChanged('reindex_start', 'all');
+    const totalChunks = await documentService.indexingService.reindexAll(docs, { mode });
+    return { mode, documents: docs.length, totalChunks };
+  })();
+  try {
+    const result = await reindexPromise;
+    successResponse(res, result, '重索引完成');
+  } catch (error) {
+    logEvent('error', 'document_reindex_failed', { mode, error: error.message, stack: error.stack });
+    next(error);
+  } finally {
+    reindexPromise = null;
+  }
+};
 
 module.exports = {
   ragChat,
@@ -579,6 +627,7 @@ module.exports = {
   getStats,
   uploadDocument,
   uploadMiddleware,
+  reindexDocuments,
 };
 
 

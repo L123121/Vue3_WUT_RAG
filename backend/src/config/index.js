@@ -3,6 +3,10 @@ require('dotenv').config();
 const path = require('path');
 const { logEvent } = require('../services/observability.service');
 const aiBaseUrl = process.env.AI_BASE_URL || 'https://api.stepfun.com/v1';
+const jevEnabled = process.env.JEV_DECISION_ENABLED === 'true';
+const jevMode = process.env.JEV_DECISION_MODE || (jevEnabled ? 'shadow' : 'off');
+const jevRolloutEnv = Number.parseFloat(process.env.JEV_DECISION_ROLLOUT_PERCENT);
+const jevMaxRetriesEnv = Number.parseInt(process.env.JEV_DECISION_MAX_RETRIES, 10);
 
 if (!process.env.VITEST) {
   const requiredEnv = ['AI_API_KEY', 'JWT_SECRET'];
@@ -23,6 +27,9 @@ module.exports = {
     maxTokens: 4000,
     temperature: 0.7,
     timeout: 60000,
+    // provider 入口的总上下文字符预算（含 Agent opts.messages；非 tokenizer 近似）
+    contextMaxChars: parseInt(process.env.AI_CONTEXT_MAX_CHARS, 10) || 12000,
+    contextMessageMaxChars: parseInt(process.env.AI_CONTEXT_MESSAGE_MAX_CHARS, 10) || 4000,
     // 推理模型思考链开关（默认关闭，避免思考 token 耗尽输出预算导致空回复）
     enableThinking: process.env.AI_ENABLE_THINKING === 'true',
     // 备用 provider（可选，主 provider 失败时自动切换）
@@ -147,6 +154,15 @@ module.exports = {
   otel: {
     enabled: !!process.env.OTEL_EXPORTER_OTLP_ENDPOINT && process.env.OTEL_TRACING_ENABLED !== 'false',
   },
+  // RunEvent JSONL 回放日志默认关闭，避免在未评估留存策略前持久化聊天正文
+  observability: {
+    runEventLogEnabled: process.env.RUN_EVENT_LOG_ENABLED === 'true',
+    runEventLogIncludeContent: process.env.RUN_EVENT_LOG_INCLUDE_CONTENT === 'true',
+    runEventLogPath: process.env.RUN_EVENT_LOG_PATH || path.join(__dirname, '..', '..', 'data', 'run-events.jsonl'),
+    runEventLogMaxBytes: parseInt(process.env.RUN_EVENT_LOG_MAX_BYTES, 10) || 32 * 1024 * 1024,
+    runEventLogMaxRuns: parseInt(process.env.RUN_EVENT_LOG_MAX_RUNS, 10) || 500,
+    runEventLogMaxEventsPerRun: parseInt(process.env.RUN_EVENT_LOG_MAX_EVENTS_PER_RUN, 10) || 1000,
+  },
   // 文档内容去重（sha256 归一化哈希）：重复上传直接返回已有文档，不再产生重复向量
   document: {
     dedupEnabled: process.env.DOC_DEDUP_ENABLED !== 'false',
@@ -199,6 +215,31 @@ module.exports = {
     semanticCacheEnabled: process.env.RAG_SEMANTIC_CACHE_ENABLED === 'true',
     semanticCacheThreshold: Number.parseFloat(process.env.RAG_SEMANTIC_CACHE_THRESHOLD || '0.95'),
     semanticCacheMaxEntries: parseInt(process.env.RAG_SEMANTIC_CACHE_MAX_ENTRIES, 10) || 200,
+    // 已上架且未漂移的 Wiki 词条参与导航型知识源；默认与 Qdrant 候选合并，未命中时仍走纯 Qdrant
+    wikiFirstEnabled: process.env.RAG_WIKI_FIRST_ENABLED !== 'false',
+    wikiFirstHybridEnabled: process.env.RAG_WIKI_HYBRID_ENABLED !== 'false',
+    wikiFirstMaxEntries: Math.min(Math.max(parseInt(process.env.RAG_WIKI_FIRST_MAX_ENTRIES, 10) || 3, 1), 10),
+  },
+  // Jev System One 决策层：默认 off；shadow 只记录分歧，canary/enforce 才可改变主路由
+  jev: {
+    enabled: jevEnabled,
+    mode: jevMode,
+    apiKey: process.env.JEV_API_KEY || process.env.TYPESAFE_API_KEY || '',
+    endpoint: process.env.JEV_DECISION_ENDPOINT || 'https://api.typesafe.ai/v1/systemone',
+    model: process.env.JEV_DECISION_MODEL || 'jev-latest',
+    timeoutMs: parseInt(process.env.JEV_DECISION_TIMEOUT_MS, 10) || 1200,
+    maxRetries: Number.isFinite(jevMaxRetriesEnv)
+      ? Math.min(Math.max(jevMaxRetriesEnv, 0), 2)
+      : 1,
+    minConfidence: Number.parseFloat(process.env.JEV_DECISION_MIN_CONFIDENCE || '0.55'),
+    rolloutPercent: Number.isFinite(jevRolloutEnv)
+      ? Math.min(Math.max(jevRolloutEnv, 0), 100)
+      : (jevMode === 'canary' ? 0 : 100),
+    includeHistory: process.env.JEV_DECISION_INCLUDE_HISTORY === 'true',
+    maxMessageChars: parseInt(process.env.JEV_DECISION_MAX_MESSAGE_CHARS, 10) || 4000,
+    maxHistoryItems: parseInt(process.env.JEV_DECISION_MAX_HISTORY_ITEMS, 10) || 4,
+    maxHistoryChars: parseInt(process.env.JEV_DECISION_MAX_HISTORY_CHARS, 10) || 1200,
+    policyVersion: process.env.JEV_DECISION_POLICY_VERSION || 'route-v1',
   },
   // 轻量 Agent 工具调度（V2.0）：默认启用；AGENT_TOOL_ENABLED=false 可一键回退 RAG
   agent: {
@@ -217,6 +258,18 @@ module.exports = {
     toolResultKeepRounds: Math.max(parseInt(process.env.AGENT_TOOL_RESULT_KEEP_ROUNDS, 10) || 1, 1),
     toolSpillDir: process.env.AGENT_TOOL_SPILL_DIR || path.join(__dirname, '..', '..', 'data', 'tool-spills'),
     toolSpillMaxFiles: parseInt(process.env.AGENT_TOOL_SPILL_MAX_FILES, 10) || 200,
+    toolSpillTtlMs: parseInt(process.env.AGENT_TOOL_SPILL_TTL_MS, 10) || 60 * 60 * 1000,
+    toolSpillMaxBytes: parseInt(process.env.AGENT_TOOL_SPILL_MAX_BYTES, 10) || 64 * 1024 * 1024,
+    maxToolCallsPerRound: Math.max(parseInt(process.env.AGENT_MAX_TOOL_CALLS_PER_ROUND, 10) || 4, 1),
+  },
+  // 校园百科（Wiki）编译期治理：入库/上架时一次性梳理互链，查询期不再现算
+  wiki: {
+    // 词条上架时让 LLM 从候选词条里挑关联页（fire-and-forget，不阻塞上下架响应）；
+    // 失败或关闭时相关词条回退前端按分类推荐，不影响可用性
+    relationCompileEnabled: process.env.WIKI_RELATION_COMPILE_ENABLED !== 'false',
+    relationCompileMaxCandidates: Math.min(Math.max(parseInt(process.env.WIKI_RELATION_MAX_CANDIDATES, 10) || 20, 1), 50),
+    relationCompileMaxRelated: Math.min(Math.max(parseInt(process.env.WIKI_RELATION_MAX_RELATED, 10) || 5, 1), 10),
+    relationCompileTimeoutMs: parseInt(process.env.WIKI_RELATION_TIMEOUT_MS, 10) || 8000,
   },
   // 记忆系统（2026-09-03 新增）：LLM 记忆提取与分类治理
   memory: {

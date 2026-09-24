@@ -2,166 +2,272 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const config = require("../config");
 const { logEvent } = require('./observability.service');
 
 /**
- * ContextCompactionService — Agent 上下文压缩分层（借鉴 AgentHarness 四层压缩中的两层）
+ * ContextCompactionService — Agent 上下文压缩与受控工具工件。
  *
- * 背景：agent 链路把 search_knowledge_base 的检索结果（单条可达数千字符）以
- * tool 角色消息回注上下文，多轮工具调度后这是最大的 token 膨胀源。
- *
- * L1 大结果落盘（spill）：单条 tool result 超过 spillThreshold 时，完整内容写入
- *    data/tool-spills/，上下文中只保留头部摘要 + 文件引用。保留 4000 字符硬上限兜底。
- * L2 历史 tool result 替换：多轮工具调度中仅保留最近 keepRounds 轮完整 tool 消息，
- *    更早轮次替换为短占位符——该结果已在当时轮次被 LLM 消费，后续轮次只需知道
- *    "调过这个工具、命中过什么"，不再需要原文。
- *
- * 两层均为纯函数/幂等落盘，失败静默降级为原截断逻辑，不影响主链路。
+ * 大工具结果写入私有工件目录，上下文只携带短摘录和 opaque artifactId；
+ * Agent 需要细节时必须调用 read_tool_artifact，不能访问服务器路径。
  */
 
-// 落盘后上下文中保留的头部摘要长度（字符）
 const SPILL_EXCERPT_CHARS = 600;
-// 单条 tool 消息最终硬上限（兜底，与压缩前行为一致）
 const HARD_CAP_CHARS = 4000;
+const DEFAULT_READ_LIMIT = 4000;
+const ARTIFACT_ID_RE = /^spill_[a-zA-Z0-9_-]{20,100}$/;
+let cleanupTimer = null;
 
 function isEnabled() {
   return config.agent?.contextCompactionEnabled === true;
 }
 
-/**
- * 安全文件名：traceId/工具名只保留字母数字与短横线，避免路径注入
- */
-function safeSegment(value, fallback = "x") {
-  const s = String(value || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
-  return s || fallback;
+function createArtifactId() {
+  const id = typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID().replace(/-/g, "")
+    : crypto.randomBytes(24).toString("hex");
+  return `spill_${id}`;
+}
+
+function normalizeOwner(value) {
+  return String(value || "").slice(0, 160);
+}
+
+function buildMetadata(artifactId, name, text, meta) {
+  return {
+    artifactId,
+    tool: normalizeOwner(name),
+    traceId: normalizeOwner(meta.traceId),
+    userId: normalizeOwner(meta.userId),
+    conversationId: normalizeOwner(meta.conversationId),
+    round: Number.isFinite(Number(meta.round)) ? Number(meta.round) : null,
+    originalLength: text.length,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function serializeSpill(metadata, text) {
+  return `# 工具结果落盘\n\n<!-- spill-meta:${JSON.stringify(metadata)} -->\n\n---\n\n${text}`;
+}
+
+function parseSpill(raw) {
+  const match = String(raw || '').match(/<!-- spill-meta:([\s\S]*?) -->/);
+  if (!match) return { metadata: {}, content: String(raw || '') };
+  let metadata = {};
+  try { metadata = JSON.parse(match[1]); } catch { metadata = {}; }
+  const delimiter = '\n---\n\n';
+  const index = String(raw).indexOf(delimiter);
+  return {
+    metadata,
+    content: index >= 0 ? String(raw).slice(index + delimiter.length) : String(raw || ''),
+  };
+}
+
+function resolveSpillPath(spillDir, artifactId) {
+  if (!spillDir || !ARTIFACT_ID_RE.test(artifactId)) return null;
+  const root = path.resolve(spillDir);
+  const target = path.resolve(root, `${artifactId}.md`);
+  if (path.dirname(target) !== root) return null;
+  return target;
 }
 
 /**
- * L1 大结果落盘
- *
- * @param {string} name - 工具名
- * @param {string} content - 工具结果原文
- * @param {Object} meta - { traceId, round, index, spillDir }
- * @returns {Promise<{ content: string, spilled: boolean, originalLength: number, spillPath: string|null }>}
+ * L1 大结果落盘。
+ * meta: { traceId, userId, conversationId, round, index, spillDir }
  */
 async function spillToolResult(name, content, meta = {}) {
   const text = String(content ?? "");
   const threshold = config.agent?.toolResultSpillThreshold || 2000;
   if (!isEnabled() || text.length <= threshold) {
-    return { content: text.substring(0, HARD_CAP_CHARS), spilled: false, originalLength: text.length, spillPath: null };
+    return { content: text.substring(0, HARD_CAP_CHARS), spilled: false, originalLength: text.length, spillPath: null, artifactId: null };
   }
 
   const spillDir = meta.spillDir || config.agent?.toolSpillDir;
-  const fileName = `${safeSegment(meta.traceId, "trace")}-r${meta.round ?? 0}-t${meta.index ?? 0}-${safeSegment(name, "tool")}.md`;
-  const spillPath = spillDir ? path.join(spillDir, fileName) : null;
-
-  // 落盘失败静默降级为硬截断，不影响主链路
+  const artifactId = createArtifactId();
+  const spillPath = resolveSpillPath(spillDir, artifactId);
+  const metadata = buildMetadata(artifactId, name, text, meta);
   let written = false;
+
   if (spillPath) {
     try {
-      await fs.promises.mkdir(spillDir, { recursive: true });
-      const header = `# 工具结果落盘\n\n- 工具: ${name}\n- traceId: ${meta.traceId || "-"}\n- 轮次: ${meta.round ?? "-"}\n- 原始长度: ${text.length} 字符\n- 时间: ${new Date().toISOString()}\n\n---\n\n`;
-      await fs.promises.writeFile(spillPath, header + text, "utf8");
+      await fs.promises.mkdir(spillDir, { recursive: true, mode: 0o700 });
+      await fs.promises.chmod(spillDir, 0o700).catch(() => {});
+      const tempPath = `${spillPath}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
+      await fs.promises.writeFile(tempPath, serializeSpill(metadata, text), { encoding: "utf8", mode: 0o600, flag: "wx" });
+      await fs.promises.rename(tempPath, spillPath);
+      await fs.promises.chmod(spillPath, 0o600).catch(() => {});
       written = true;
       pruneSpillDir(spillDir).catch(() => {});
     } catch (err) {
       logEvent('warn', 'compaction_tool_result_persist_failed', { error: err.message });
+      try {
+        const entries = await fs.promises.readdir(spillDir);
+        await Promise.all(entries.filter((entry) => entry.endsWith('.tmp')).map((entry) => fs.promises.unlink(path.join(spillDir, entry)).catch(() => {})));
+      } catch { /* 目录创建失败时无需清理 */ }
     }
   }
 
   const excerpt = text.substring(0, SPILL_EXCERPT_CHARS);
   const reference = written
-    ? `[完整结果共 ${text.length} 字符，已保存至 ${spillPath}，如需细节可读取该文件]`
+    ? `[完整结果共 ${text.length} 字符，已保存至工件 ${artifactId}；如需细节请调用 read_tool_artifact]`
     : `[结果共 ${text.length} 字符，超出上下文预算，此处仅保留前 ${SPILL_EXCERPT_CHARS} 字符]`;
   return {
     content: `${excerpt}\n\n${reference}`,
     spilled: written,
     originalLength: text.length,
     spillPath: written ? spillPath : null,
+    artifactId: written ? artifactId : null,
   };
 }
 
-/**
- * 落盘目录保留策略：超过 maxFiles 时按修改时间删除最旧文件（fire-and-forget）
- */
-async function pruneSpillDir(spillDir) {
-  const maxFiles = config.agent?.toolSpillMaxFiles || 200;
-  const entries = await fs.promises.readdir(spillDir, { withFileTypes: true });
-  const files = [];
-  for (const e of entries) {
-    if (!e.isFile() || !e.name.endsWith(".md")) continue;
-    const full = path.join(spillDir, e.name);
-    const stat = await fs.promises.stat(full).catch(() => null);
-    if (stat) files.push({ full, mtimeMs: stat.mtimeMs });
-  }
-  if (files.length <= maxFiles) return;
-  files.sort((a, b) => a.mtimeMs - b.mtimeMs);
-  const toDelete = files.slice(0, files.length - maxFiles);
-  await Promise.all(toDelete.map((f) => fs.promises.unlink(f.full).catch(() => {})));
+function isOwner(metadata, context = {}) {
+  const ownerUserId = normalizeOwner(metadata.userId);
+  const ownerConversationId = normalizeOwner(metadata.conversationId);
+  const ownerTraceId = normalizeOwner(metadata.traceId);
+  const contextUserId = normalizeOwner(context.userId);
+  const contextConversationId = normalizeOwner(context.conversationId);
+  const contextTraceId = normalizeOwner(context.traceId);
+
+  // 工件缺少最基本的 owner/run 元数据时 fail-closed，不能把“未绑定”解释为公开可读。
+  if (!ownerUserId || !ownerTraceId || !contextUserId || !contextTraceId) return false;
+  if (ownerUserId !== contextUserId || ownerTraceId !== contextTraceId) return false;
+  if (ownerConversationId && ownerConversationId !== contextConversationId) return false;
+  return true;
 }
 
 /**
- * L2 历史 tool result 替换（纯函数）
- *
- * messages 中的"工具组" = 一条带 tool_calls 的 assistant 消息 + 其后连续的 tool 消息。
- * 仅保留最近 keepRounds 组完整内容，更早组的 tool 消息替换为占位符。
- *
- * @param {Array} messages - OpenAI 格式消息数组
- * @param {Object} opts - { keepRounds }
- * @returns {{ messages: Array, compactedGroups: number, savedChars: number }}
+ * 读取受控工件，不接受路径，只接受 opaque artifactId。
+ * 返回指定字符区间，默认最多 4000 字符。
  */
+async function readToolSpill(artifactId, context = {}, options = {}) {
+  const spillDir = config.agent?.toolSpillDir;
+  const spillPath = resolveSpillPath(spillDir, String(artifactId || ''));
+  if (!spillPath) return { ok: false, content: '工件标识无效', artifactId: null };
+
+  let stat;
+  try {
+    stat = await fs.promises.lstat(spillPath);
+    if (!stat.isFile()) return { ok: false, content: '工件不可读取', artifactId };
+    const ttl = config.agent?.toolSpillTtlMs || 60 * 60 * 1000;
+    if (Date.now() - stat.mtimeMs > ttl) {
+      await fs.promises.unlink(spillPath).catch(() => {});
+      return { ok: false, content: '工件已过期', artifactId };
+    }
+    const raw = await fs.promises.readFile(spillPath, 'utf8');
+    const parsed = parseSpill(raw);
+    if (!isOwner(parsed.metadata, context)) return { ok: false, content: '无权读取该工件', artifactId };
+    const full = parsed.content;
+    const offset = Math.max(Number.parseInt(options.offset, 10) || 0, 0);
+    const limit = Math.min(Math.max(Number.parseInt(options.limit, 10) || DEFAULT_READ_LIMIT, 1), DEFAULT_READ_LIMIT);
+    const content = full.slice(offset, offset + limit);
+    return {
+      ok: true,
+      content: content || '(工件该区间为空)',
+      artifactId,
+      offset,
+      limit,
+      totalChars: full.length,
+      hasMore: offset + content.length < full.length,
+    };
+  } catch (err) {
+    if (err.code === 'ENOENT') return { ok: false, content: '工件不存在或已清理', artifactId };
+    logEvent('warn', 'compaction_tool_result_read_failed', { error: err.message });
+    return { ok: false, content: '工件读取失败', artifactId };
+  }
+}
+
+/**
+ * 按 TTL、最大文件数和总字节数清理工件。
+ */
+async function pruneSpillDir(spillDir = config.agent?.toolSpillDir) {
+  if (!spillDir) return;
+  const entries = await fs.promises.readdir(spillDir, { withFileTypes: true }).catch(() => []);
+  const now = Date.now();
+  const ttl = config.agent?.toolSpillTtlMs || 60 * 60 * 1000;
+  const maxFiles = config.agent?.toolSpillMaxFiles || 200;
+  const maxBytes = config.agent?.toolSpillMaxBytes || 64 * 1024 * 1024;
+  const files = [];
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+    const full = path.join(spillDir, entry.name);
+    const stat = await fs.promises.stat(full).catch(() => null);
+    if (!stat) continue;
+    if (now - stat.mtimeMs > ttl) {
+      await fs.promises.unlink(full).catch(() => {});
+      continue;
+    }
+    files.push({ full, mtimeMs: stat.mtimeMs, size: stat.size });
+  }
+  files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+  let totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+  const toDelete = [];
+  while (files.length - toDelete.length > maxFiles || totalBytes > maxBytes) {
+    const file = files[toDelete.length];
+    if (!file) break;
+    toDelete.push(file);
+    totalBytes -= file.size;
+  }
+  await Promise.all(toDelete.map((file) => fs.promises.unlink(file.full).catch(() => {})));
+}
+
+function startSpillCleanup() {
+  if (cleanupTimer || !config.agent?.toolSpillDir) return;
+  pruneSpillDir().catch(() => {});
+  cleanupTimer = setInterval(() => { pruneSpillDir().catch(() => {}); }, 10 * 60 * 1000);
+  cleanupTimer.unref?.();
+}
+
+function stopSpillCleanup() {
+  if (!cleanupTimer) return;
+  clearInterval(cleanupTimer);
+  cleanupTimer = null;
+}
+
 function compactHistoricalToolResults(messages, opts = {}) {
   if (!isEnabled()) return { messages, compactedGroups: 0, savedChars: 0 };
   const keepRounds = Math.max(opts.keepRounds ?? config.agent?.toolResultKeepRounds ?? 1, 1);
   if (!Array.isArray(messages)) return { messages, compactedGroups: 0, savedChars: 0 };
-
-  // 1) 定位工具组：assistant(tool_calls) 之后连续的 tool 消息下标区间
   const groups = [];
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i];
-    if (m?.role === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
-      const toolIndexes = [];
-      let j = i + 1;
-      while (j < messages.length && messages[j]?.role === "tool") {
-        toolIndexes.push(j);
-        j++;
-      }
-      if (toolIndexes.length > 0) groups.push({ assistantIndex: i, toolIndexes });
+  for (let i = 0; i < messages.length; i += 1) {
+    const message = messages[i];
+    if (message?.role !== 'assistant' || !Array.isArray(message.tool_calls) || message.tool_calls.length === 0) continue;
+    const toolIndexes = [];
+    let j = i + 1;
+    while (j < messages.length && messages[j]?.role === 'tool') {
+      toolIndexes.push(j);
+      j += 1;
     }
+    if (toolIndexes.length > 0) groups.push({ assistantIndex: i, toolIndexes });
   }
-
   if (groups.length <= keepRounds) return { messages, compactedGroups: 0, savedChars: 0 };
 
-  // 2) 除最近 keepRounds 组外，其余组的 tool 消息替换为占位符
   const compactGroups = groups.slice(0, groups.length - keepRounds);
   const next = messages.slice();
   let savedChars = 0;
-
-  for (let g = 0; g < compactGroups.length; g++) {
+  for (let g = 0; g < compactGroups.length; g += 1) {
     const group = compactGroups[g];
-    // tool_call_id → 工具名（从该组 assistant 消息的 tool_calls 建立映射）
-    const nameById = new Map(
-      (messages[group.assistantIndex].tool_calls || []).map((tc) => [tc.id, tc.function?.name || "unknown"])
-    );
-    for (const idx of group.toolIndexes) {
-      const msg = next[idx];
-      const original = String(msg?.content ?? "");
-      if (!original || original.startsWith("[历史工具结果已压缩]")) continue;
-      const toolName = nameById.get(msg.tool_call_id) || "unknown";
+    const nameById = new Map((messages[group.assistantIndex].tool_calls || []).map((tc) => [tc.id, tc.function?.name || 'unknown']));
+    for (const index of group.toolIndexes) {
+      const message = next[index];
+      const original = String(message?.content ?? '');
+      if (!original || original.startsWith('[历史工具结果已压缩]')) continue;
+      const toolName = nameById.get(message.tool_call_id) || 'unknown';
       const placeholder = `[历史工具结果已压缩] 工具 ${toolName} 的结果（${original.length} 字符）已在第 ${g + 1} 轮被消费，此处省略`;
-      next[idx] = { ...msg, content: placeholder };
+      next[index] = { ...message, content: placeholder };
       savedChars += Math.max(original.length - placeholder.length, 0);
     }
   }
-
   return { messages: next, compactedGroups: compactGroups.length, savedChars };
 }
 
 module.exports = {
   spillToolResult,
+  readToolSpill,
   compactHistoricalToolResults,
   pruneSpillDir,
+  startSpillCleanup,
+  stopSpillCleanup,
   SPILL_EXCERPT_CHARS,
   HARD_CAP_CHARS,
 };

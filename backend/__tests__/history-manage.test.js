@@ -108,4 +108,19 @@ describe('AiService._buildMessages（C 方案 token 预算）', () => {
     expect(ai._buildMessages('q', [])).toEqual([{ role: 'user', content: 'q' }]);
     expect(ai._buildMessages('q', null)).toEqual([{ role: 'user', content: 'q' }]);
   });
+
+  it('显式 opts.messages 也会限制上下文并保留工具调用组', () => {
+    const messages = [
+      { role: 'system', content: 'system'.repeat(1000) },
+      { role: 'user', content: '问题'.repeat(1000) },
+      { role: 'assistant', content: null, tool_calls: [{ id: 'call-1', function: { name: 'search', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'call-1', content: '工具结果'.repeat(3000) },
+      { role: 'user', content: '当前问题'.repeat(1000) },
+    ];
+    const bounded = ai._boundMessages(messages);
+    const chars = bounded.reduce((sum, item) => sum + String(item.content || '').length, 0);
+    expect(chars).toBeLessThanOrEqual(12000);
+    expect(bounded.some((item) => item.role === 'assistant' && item.tool_calls)).toBe(true);
+    expect(bounded.some((item) => item.role === 'tool' && item.tool_call_id === 'call-1')).toBe(true);
+  });
 });

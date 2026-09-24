@@ -213,6 +213,7 @@ const {
                 <p class="mt-1 text-[11px] font-semibold text-wut-600 dark:text-wut-400">
                   {{ doc.category || '未分类' }}
                   <span v-if="!doc.visible" class="ml-1 rounded bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 text-amber-700 dark:text-amber-300">未上架</span>
+                  <span v-if="doc.stale" class="ml-1 rounded bg-rose-100 dark:bg-rose-900/40 px-1.5 py-0.5 text-rose-700 dark:text-rose-300">来源已更新</span>
                 </p>
                 <p v-if="doc.excerpt" class="mt-1.5 text-[11px] leading-relaxed text-slate-500 dark:text-gray-400 line-clamp-2">…{{ doc.excerpt }}…</p>
                 <p class="mt-auto pt-2 text-[11px] text-slate-400 dark:text-gray-500">

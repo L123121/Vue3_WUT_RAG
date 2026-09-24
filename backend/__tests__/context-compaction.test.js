@@ -6,6 +6,7 @@ const path = require("path");
 const config = require("../src/config");
 const {
   spillToolResult,
+  readToolSpill,
   compactHistoricalToolResults,
   SPILL_EXCERPT_CHARS,
 } = require("../src/services/context-compaction.service");
@@ -18,6 +19,8 @@ describe("ContextCompactionService", () => {
     config.agent.contextCompactionEnabled = true;
     config.agent.toolResultSpillThreshold = 2000;
     config.agent.toolResultKeepRounds = 1;
+    config.agent.toolSpillDir = tmpDir;
+    config.agent.toolSpillTtlMs = 60 * 60 * 1000;
   });
 
   afterEach(() => {
@@ -36,6 +39,8 @@ describe("ContextCompactionService", () => {
       const big = "检索内容".repeat(1000); // 4000 字符
       const r = await spillToolResult("search_knowledge_base", big, {
         traceId: "trace_abc",
+        userId: 'user-1',
+        conversationId: 'conv-1',
         round: 1,
         index: 0,
         spillDir: tmpDir,
@@ -50,6 +55,24 @@ describe("ContextCompactionService", () => {
       const onDisk = fs.readFileSync(path.join(tmpDir, files[0]), "utf8");
       expect(onDisk).toContain(big.substring(0, 100));
       expect(onDisk).toContain("search_knowledge_base");
+      const read = await readToolSpill(r.artifactId, {
+        userId: 'user-1',
+        conversationId: 'conv-1',
+        traceId: 'trace_abc',
+      }, { offset: 100, limit: 80 });
+      expect(read.ok).toBe(true);
+      expect(read.content).toBe(big.substring(100, 180));
+      const denied = await readToolSpill(r.artifactId, {
+        userId: 'other-user',
+        conversationId: 'conv-1',
+        traceId: 'trace_abc',
+      });
+      expect(denied.ok).toBe(false);
+      const missingRun = await readToolSpill(r.artifactId, {
+        userId: 'user-1',
+        conversationId: 'conv-1',
+      });
+      expect(missingRun.ok).toBe(false);
     });
 
     it("落盘摘要保留头部内容", async () => {

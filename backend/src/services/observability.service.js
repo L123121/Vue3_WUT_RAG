@@ -9,6 +9,10 @@ function createTraceId(prefix = 'req') {
   return `${prefix}_${id}`;
 }
 
+function createRunId() {
+  return createTraceId('run');
+}
+
 function sanitizeTraceId(value) {
   const traceId = String(value || '').trim();
   if (!traceId || traceId.length > 128) return null;
@@ -68,6 +72,7 @@ function logEvent(level, event, payload = {}) {
 
 module.exports = {
   compactPayload,
+  createRunId,
   createTraceId,
   logEvent,
   sanitizeError,

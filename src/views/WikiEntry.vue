@@ -18,6 +18,8 @@ const {
   notFound,
   isAdmin,
   busy,
+  revisions,
+  revisionsLoading,
   prevEntry,
   nextEntry,
   related,
@@ -114,14 +116,14 @@ const editInKnowledgeBase = () => {
         :disabled="busy"
         :class="[
           'inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-bold transition-colors disabled:opacity-50',
-          entry.visible
+          entry.visible && !entry.stale
             ? 'border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20'
             : 'border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'
         ]"
       >
-        <EyeOff v-if="entry.visible" :size="14" />
+        <EyeOff v-if="entry.visible && !entry.stale" :size="14" />
         <Eye v-else :size="14" />
-        <span>{{ busy ? '处理中…' : (entry.visible ? '下架词条' : '上架词条') }}</span>
+        <span>{{ busy ? '处理中…' : (entry.stale ? '重新审核并上架' : (entry.visible ? '下架词条' : '上架词条')) }}</span>
       </button>
       <button
         v-if="entry"
@@ -184,10 +186,38 @@ const editInKnowledgeBase = () => {
           <span v-if="entry?.sourceLabel" class="rounded-full bg-slate-100 dark:bg-gray-800 px-2 py-0.5 text-slate-600 dark:text-gray-300">
             来源：{{ entry.sourceLabel }}
           </span>
+          <span
+            v-else-if="entry && !entry.simulated && entry.confidence === 0.5"
+            title="内容真实但未标注具体来源，建议自行核实后再作为参考"
+            class="rounded-full bg-slate-100 dark:bg-gray-800 px-2 py-0.5 text-slate-500 dark:text-gray-400"
+          >
+            来源未标注，请自行核实
+          </span>
           <span v-if="entry && !entry.visible" class="rounded-full bg-amber-100 dark:bg-amber-900/40 px-2 py-0.5 font-bold text-amber-700 dark:text-amber-300">
             未上架（仅管理员可见）
           </span>
+          <span v-if="entry?.stale" class="rounded-full bg-rose-100 dark:bg-rose-900/40 px-2 py-0.5 font-bold text-rose-700 dark:text-rose-300">
+            来源已更新，待重新核验
+          </span>
         </p>
+
+        <div
+          v-if="isAdmin && entry && (entry.stale || revisions.length)"
+          class="mt-3 rounded-xl border border-slate-200 dark:border-gray-800 bg-slate-50/80 dark:bg-gray-900/60 px-3 py-2"
+        >
+          <div class="flex items-center justify-between gap-2 text-[11px] font-bold text-slate-600 dark:text-gray-300">
+            <span>来源修订记录</span>
+            <span v-if="revisionsLoading" class="font-normal text-slate-400">加载中…</span>
+          </div>
+          <div v-if="revisions.length" class="mt-1.5 space-y-1">
+            <div v-for="revision in revisions.slice(0, 4)" :key="`${revision.revision}:${revision.recordedAt}`" class="flex items-center gap-2 text-[10px] text-slate-500 dark:text-gray-400">
+              <span class="font-mono">{{ String(revision.revision || '').slice(0, 12) }}</span>
+              <span>{{ formatWikiDate(revision.recordedAt) }}</span>
+              <span v-if="revision.reason === 'source_updated'" class="text-rose-600 dark:text-rose-400">正文变更待审核</span>
+            </div>
+          </div>
+          <p v-else class="mt-1 text-[10px] text-slate-400">暂无修订记录</p>
+        </div>
 
         <div
           v-if="entry?.simulated"
@@ -262,14 +292,16 @@ const editInKnowledgeBase = () => {
           <h2 class="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-gray-500 mb-2">
             <BookOpen :size="11" /> 相关词条
           </h2>
-          <div class="space-y-1">
+          <div class="space-y-1.5">
             <router-link
               v-for="doc in related"
               :key="doc.id"
               :to="wikiEntryPath(doc)"
+              :title="doc.reason || ''"
               class="block w-full text-left text-[11px] leading-snug text-slate-600 dark:text-gray-300 hover:text-wut-700 dark:hover:text-wut-300 transition-colors"
             >
-              {{ doc.title }}
+              <span class="block">{{ doc.title }}</span>
+              <span v-if="doc.reason" class="block text-[10px] text-slate-400 dark:text-gray-500">{{ doc.reason }}</span>
             </router-link>
           </div>
         </div>

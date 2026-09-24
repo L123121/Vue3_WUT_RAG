@@ -13,8 +13,23 @@ import {
   normalizeMessages,
   createLocalConversation,
 } from '../utils/chatHelpers.js';
+import {
+  createRunId,
+  dispatchRunEvent,
+  TERMINAL_RUN_EVENT_TYPES,
+} from '../utils/runEvents.js';
+import {
+  appendUnknownMessageFragment,
+  clearMessageAttemptState,
+  hydrateMessageFragments,
+  patchMessageForEvent,
+  toLlmHistoryMessage,
+} from '../utils/messageFragments.js';
 
 const STREAM_STALL_TIMEOUT = 60000;
+const TERMINAL_RUN_STATUSES = new Set(['completed', 'failed', 'aborted']);
+
+const isTerminalRun = (status) => TERMINAL_RUN_STATUSES.has(status);
 
 /**
  * 模块级「当前已注册的 visibilitychange handler」引用。
@@ -49,7 +64,7 @@ function updateMessage(convStore, conversationId, msgId, updater) {
   if (!msgs) return null;
   const msgIdx = msgs.findIndex((m) => m.id === msgId);
   if (msgIdx === -1) return null;
-  const updatedMsg = updater(msgs[msgIdx]);
+  const updatedMsg = hydrateMessageFragments(updater(msgs[msgIdx]));
   const newMessages = msgs.map((m, i) => (i === msgIdx ? updatedMsg : m));
   // 替换 messages 属性（而非整个 conv 对象），触发 conv.messages 的响应式追踪
   conv.messages = newMessages;
@@ -66,46 +81,116 @@ export function useStreaming() {
   const isConnected = ref(true);
   const isReconnecting = ref(false);
   const reconnectAttempt = ref(0);
-  // agent 决策阶段的"思考草稿"：实时透传的内容先落在这里渲染；
-  // 出现 tool_call 则丢弃（前端收起草稿显示过程卡片），直接回答则在
-  // done 时转正为消息正文。详见 agent.service chatStream。
+  // agent 决策阶段的"思考草稿"：对外仍暴露当前活跃 run 的草稿，
+  // 但真实状态按 runId 存放，迟到回调不能覆盖新请求。
   const decisionDraft = ref('');
+  const runsById = ref({});
+  const activeRunId = ref(null);
 
   let currentAbortController = null;
+  const controllersByRunId = new Map();
   // 当前正在流式的会话 id（响应式，供 store 层在切换会话时判断是否需中止）
   const activeStreamingConversationId = ref(null);
   let unsubscribeConnection = null;
   let rafId = null;
   let pendingContent = '';
+  let pendingRunId = null;
   let visibilityHandler = null;
 
-  // 后台 Tab RAF 兜底：visibilitychange → hidden 时，pendingContent 立即落盘
-  // 浏览器在后台 Tab 会暂停 requestAnimationFrame，导致流式内容一直堆积在
-  // pendingContent 中，直到切回前台或流结束才一次性刷新，用户体验上是"长时间无反应"
-  // 加这个监听后，只要切到后台就立即刷到消息，保证下次切回来时能看到最新内容
+  const getRun = (runId) => runsById.value[runId] || null;
+  const patchRun = (runId, patch) => {
+    const run = getRun(runId);
+    if (!run) return null;
+    Object.assign(run, patch);
+    return run;
+  };
+  const isCurrentRun = (runId) => {
+    const run = getRun(runId);
+    return activeRunId.value === runId && !!run && !isTerminalRun(run.status);
+  };
+  const setRunDecisionDraft = (runId, value) => {
+    const run = patchRun(runId, { decisionDraft: value });
+    if (run && activeRunId.value === runId) decisionDraft.value = value;
+    return run;
+  };
+  const clearRunDecisionDraft = (runId) => setRunDecisionDraft(runId, '');
+  const finishRun = (runId, status) => {
+    const run = getRun(runId);
+    if (!run || isTerminalRun(run.status)) return false;
+    patchRun(runId, { status, finishedAt: Date.now() });
+    controllersByRunId.delete(runId);
+    if (activeRunId.value === runId) {
+      activeRunId.value = null;
+      activeStreamingConversationId.value = null;
+      currentStreamingId.value = null;
+      currentAbortController = null;
+      isLoading.value = false;
+      isReconnecting.value = false;
+      reconnectAttempt.value = 0;
+      decisionDraft.value = '';
+    }
+    return true;
+  };
+
+  const flushPendingContent = (runId) => {
+    if (!runId || pendingRunId !== runId || !pendingContent) return false;
+    const run = getRun(runId);
+    if (!run || !isCurrentRun(runId)) {
+      pendingContent = '';
+      pendingRunId = null;
+      return false;
+    }
+    const content = pendingContent;
+    pendingContent = '';
+    pendingRunId = null;
+    const convStore = useConversationStore();
+    updateMessage(convStore, run.conversationId, run.assistantMessageId, (m) => {
+      const newText = getMessageText(m) + content;
+      return { ...m, text: newText, content: newText };
+    });
+    return true;
+  };
+
+  const cancelPendingRaf = (flushToMessage = false, runId = activeRunId.value) => {
+    if (rafId && pendingRunId === runId) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    }
+    if (flushToMessage) flushPendingContent(runId);
+    if (pendingRunId === runId) {
+      pendingContent = '';
+      pendingRunId = null;
+    }
+  };
+
+  const abortRun = (runId = activeRunId.value, { persist = true } = {}) => {
+    const run = getRun(runId);
+    if (!run || isTerminalRun(run.status)) return false;
+    const affectedConversationId = run.conversationId;
+    clearRunDecisionDraft(runId);
+    cancelPendingRaf(true, runId);
+    const controller = controllersByRunId.get(runId) || currentAbortController;
+    finishRun(runId, 'aborted');
+    try { controller?.abort(); } catch { /* 已中止 */ }
+    if (persist && affectedConversationId) {
+      try {
+        useConversationStore().scheduleSaveCache(true, affectedConversationId);
+      } catch {
+        // store 未就绪时忽略（缓存会由 beforeunload 兜底）
+      }
+    }
+    return true;
+  };
+
+  // 后台 Tab RAF 兜底：浏览器暂停 rAF 时，当前 run 的缓冲内容立即落盘。
   const setupVisibilityHandler = () => {
-    // 先移除上一次注册的 handler（可能是别的 useStreaming 实例留下的，
-    // 例如 HMR 重载后），保证 document 上恒为最多一个监听器。
     if (registeredVisibilityHandler) {
       document.removeEventListener('visibilitychange', registeredVisibilityHandler);
       registeredVisibilityHandler = null;
     }
     visibilityHandler = () => {
-      if (document.visibilityState === 'hidden' && pendingContent) {
-        // 取消待执行的 RAF（避免重复写）
-        if (rafId) {
-          cancelAnimationFrame(rafId);
-          rafId = null;
-        }
-        // 把累积的 pendingContent 立即写到消息
-        const convStore = useConversationStore();
-        if (activeStreamingConversationId.value && currentStreamingId.value) {
-          updateMessage(convStore, activeStreamingConversationId.value, currentStreamingId.value, (m) => {
-            const newText = getMessageText(m) + pendingContent;
-            return { ...m, text: newText, content: newText };
-          });
-        }
-        pendingContent = '';
+      if (document.visibilityState === 'hidden' && activeRunId.value) {
+        cancelPendingRaf(true, activeRunId.value);
       }
     };
     document.addEventListener('visibilitychange', visibilityHandler);
@@ -123,40 +208,22 @@ export function useStreaming() {
     }
   });
 
-  const cancelPendingRaf = (flushToMessage = false) => {
-    if (rafId) {
-      cancelAnimationFrame(rafId);
-      rafId = null;
-    }
-    if (flushToMessage && pendingContent) {
-      const convStore = useConversationStore();
-      if (activeStreamingConversationId.value && currentStreamingId.value) {
-        updateMessage(convStore, activeStreamingConversationId.value, currentStreamingId.value, (m) => {
-          const newText = getMessageText(m) + pendingContent;
-          return { ...m, text: newText, content: newText };
-        });
-      }
-    }
-    pendingContent = '';
-  };
-
   const cleanup = () => {
+    if (activeRunId.value) abortRun(activeRunId.value, { persist: false });
+    for (const controller of controllersByRunId.values()) controller.abort();
+    controllersByRunId.clear();
     decisionDraft.value = '';
     cancelPendingRaf();
     if (visibilityHandler) {
       document.removeEventListener('visibilitychange', visibilityHandler);
-      // 若模块级引用仍指向自己，一并清空，避免后续 setup 误判为「已有注册」
       if (registeredVisibilityHandler === visibilityHandler) {
         registeredVisibilityHandler = null;
       }
       visibilityHandler = null;
     }
-    if (currentAbortController) {
-      currentAbortController.abort();
-      currentAbortController = null;
-    }
     activeStreamingConversationId.value = null;
     currentStreamingId.value = null;
+    activeRunId.value = null;
     isLoading.value = false;
     isReconnecting.value = false;
     reconnectAttempt.value = 0;
@@ -172,12 +239,10 @@ export function useStreaming() {
 
   const buildHistory = (msgs, currentUserMessageId) => {
     const rawHistory = msgs
-      .filter((m) => m.id !== 'welcome' && !m.isError && m.id !== currentUserMessageId && getMessageText(m))
-      .slice(-20)
-      .map((m) => ({
-        role: m.role === 'assistant' ? 'assistant' : m.role,
-        content: getMessageText(m),
-      }));
+      .filter((m) => m.id !== currentUserMessageId)
+      .map(toLlmHistoryMessage)
+      .filter(Boolean)
+      .slice(-20);
 
     const history = [];
     let lastRole = '';
@@ -229,21 +294,32 @@ export function useStreaming() {
     }
 
     if (!userMsg) {
-      userMsg = { id: createMessageId(), role: 'user', content: trimmedText, timestamp: new Date(), files: fileData ? [fileData] : [] };
+      userMsg = hydrateMessageFragments({
+        id: createMessageId(),
+        role: 'user',
+        content: trimmedText,
+        timestamp: new Date(),
+        files: fileData ? [fileData] : [],
+      });
       if (!convStore.conversations[convIndex].messages) convStore.conversations[convIndex].messages = [];
       convStore.conversations[convIndex].messages.push(userMsg);
       convStore.registerMessage(conversationId, userMsg);
     } else {
+      userMsg = hydrateMessageFragments(userMsg);
       convStore.conversations[convIndex].messages.push(userMsg);
       convStore.registerMessage(conversationId, userMsg);
     }
     convStore.conversations[convIndex].updatedAt = new Date();
     convStore.scheduleSaveCache(true);
 
+    const runId = createRunId();
+    const abortController = new AbortController();
     isLoading.value = true;
     decisionDraft.value = '';
     activeStreamingConversationId.value = conversationId;
-    currentAbortController = new AbortController();
+    activeRunId.value = runId;
+    currentAbortController = abortController;
+    controllersByRunId.set(runId, abortController);
 
     // TTFT 埋点变量
     const streamStartTime = performance.now();
@@ -253,10 +329,27 @@ export function useStreaming() {
     const history = buildHistory(convStore.conversations[convIndex].messages || [], userMsg.id);
 
     const aiMsgId = createMessageId();
-    const aiMsg = { id: aiMsgId, role: 'model', content: '', timestamp: new Date(), sources: [] };
+    const aiMsg = hydrateMessageFragments({
+      id: aiMsgId,
+      role: 'model',
+      content: '',
+      timestamp: new Date(),
+      sources: [],
+    });
     convStore.conversations[convIndex].messages.push(aiMsg);
     convStore.registerMessage(conversationId, aiMsg);
     currentStreamingId.value = aiMsgId;
+    runsById.value[runId] = {
+      runId,
+      conversationId,
+      userMessageId: userMsg.id,
+      assistantMessageId: aiMsgId,
+      attempt: 0,
+      lastSeq: 0,
+      status: 'connecting',
+      decisionDraft: '',
+      startedAt: Date.now(),
+    };
 
     let messageToSend = trimmedText;
     if (fileData?.textContent) {
@@ -277,8 +370,15 @@ export function useStreaming() {
         safetyTimer = setTimeout(() => {
           if (resolved) return;
           resolved = true;
-          // 先中止请求：让 chat.js 的 AbortError 路径收敛状态机（onAbort → isLoading=false）
-          try { currentAbortController?.abort(); } catch { /* 已清理 */ }
+          if (!isCurrentRun(runId)) {
+            markResolved();
+            resolve();
+            return;
+          }
+          cancelPendingRaf(true, runId);
+          clearRunDecisionDraft(runId);
+          finishRun(runId, 'failed');
+          try { abortController.abort(); } catch { /* 已清理 */ }
           reject(new Error('响应超时，请检查网络连接后重试'));
         }, STREAM_STALL_TIMEOUT + 5000);
       };
@@ -291,27 +391,39 @@ export function useStreaming() {
           // 否则 currentStreamingId 仍指向旧会话消息，新会话 UI 状态会错乱
           if (convStore.currentConversationId !== conversationId) {
             if (import.meta.env.DEV) console.debug('[Stream] 检测到会话已切换，中止旧流式');
-            abortCurrentRequest();
+            abortRun(runId);
             return;
           }
-          // agent 决策阶段内容 → 写入思考草稿区（不进消息正文）；
-          // 直答回答也走这里，done 时草稿转正为正文
+          // agent 决策阶段内容 → 写入该 run 的思考草稿（不进消息正文）；
+          // 直答回答也走这里，done 时转正为正文
           if (meta?.decision) {
-            decisionDraft.value += content;
+            const nextDraft = `${getRun(runId)?.decisionDraft || ''}${content}`;
+            setRunDecisionDraft(runId, nextDraft);
             onStreamEvent?.('chunk', content);
             return;
           }
           // 非 decision 内容（RAG/chat 路径或 agent 收尾生成）→ 取代草稿，进入正文
-          decisionDraft.value = '';
+          clearRunDecisionDraft(runId);
           // 首字上屏埋点：第一个 chunk 到达时记录时间
           if (!firstChunkReceived) {
             firstChunkReceived = true;
             const firstChunkMs = Math.round(performance.now() - streamStartTime);
             if (import.meta.env.DEV) console.debug(`[TTFT] 首字上屏(RAF前): ${firstChunkMs}ms`);
           }
+          pendingRunId = runId;
           pendingContent += content;
           if (!rafId) {
+            const scheduledRunId = runId;
             rafId = requestAnimationFrame(() => {
+              rafId = null;
+              // 被中止或替换的旧 run 不得消费新 run 的共享 RAF 缓冲。
+              if (!isCurrentRun(scheduledRunId)) {
+                if (pendingRunId === scheduledRunId) {
+                  pendingContent = '';
+                  pendingRunId = null;
+                }
+                return;
+              }
               // 首字渲染埋点：RAF 回调执行 = 真正写 DOM 的时刻
               if (!firstFramePainted) {
                 firstFramePainted = true;
@@ -325,90 +437,83 @@ export function useStreaming() {
                   localStorage.setItem(key, JSON.stringify(arr));
                 } catch {}
               }
-              updateMessage(convStore, conversationId, aiMsgId, (m) => {
-                const newText = getMessageText(m) + pendingContent;
-                return { ...m, text: newText, content: newText };
-              });
-              pendingContent = '';
-              rafId = null;
+              flushPendingContent(scheduledRunId);
             });
           }
           onStreamEvent?.('chunk', content);
         },
+        // 以下九类事件都只是"整体替换/整体追加某个字段"，合并策略声明在
+        // messageFragments.js::MESSAGE_EVENT_PATCH_RULES 里，新增一种同类事件
+        // 只需在那张表里加一行，不必在这里再手写一个 updater。
         onSources: (sources) => {
-          updateMessage(convStore, conversationId, aiMsgId, (m) => ({ ...m, sources, answerMode: 'rag', usedRag: true }));
+          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'sources', sources));
         },
         onIntent: (intent) => {
           // V2.0 自动路由：记录后端意图识别结果，前端展示"自动路由：知识库检索"等
-          updateMessage(convStore, conversationId, aiMsgId, (m) => ({ ...m, intent: intent || m.intent }));
+          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'intent', intent));
+        },
+        onDecision: (decision) => {
+          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'decision', decision));
         },
         onToolCall: (toolCall) => {
-          // 决策草稿被工具调用取代 → 收起草稿，前端展示过程卡片
-          decisionDraft.value = '';
-          updateMessage(convStore, conversationId, aiMsgId, (m) => ({
-            ...m,
-            toolCalls: [...(m.toolCalls || []), toolCall],
-            answerMode: 'agent',
-          }));
+          // 决策草稿被工具调用取代 → 收起该 run 的草稿，前端展示过程卡片
+          clearRunDecisionDraft(runId);
+          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'toolCall', toolCall));
         },
         onToolResult: (toolResult) => {
-          updateMessage(convStore, conversationId, aiMsgId, (m) => ({
-            ...m,
-            toolResults: [...(m.toolResults || []), toolResult],
-          }));
+          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'toolResult', toolResult));
         },
         onTrace: (payload) => {
-          // agent/agenticRag：Agent 链路的轮次/工具/收尾原因 trace（MessageBubble 以
-          // finishReason 字段区分 agent trace 与 RAG trace，二者共用 ragTrace 存储位）
+          // agent/agenticRag：Agent 链路的轮次/工具/收尾原因 trace（兼容字段仍共用 ragTrace，
+          // Fragment hydration 根据 finishReason 区分 Agent 与 RAG 渲染）
           const trace = payload?.agent || payload?.agenticRag || payload?.trace || null;
           const rag = payload?.rag || trace?.outcome || {};
           const usedRag = rag.usedRag === true;
-          updateMessage(convStore, conversationId, aiMsgId, (m) => ({
-            ...m,
-            traceId: payload?.traceId || trace?.traceId || m.traceId,
-            ragTrace: trace || m.ragTrace,
-            ...(usedRag ? { answerMode: 'rag', usedRag: true } : {}),
-          }));
+          const incomingTraceId = payload?.traceId || trace?.traceId || '';
+          updateMessage(convStore, conversationId, aiMsgId, (m) => {
+            const traceId = incomingTraceId || m.traceId;
+            const traceWithIdentity = trace ? { ...trace, traceId } : m.ragTrace;
+            return {
+              ...m,
+              traceId,
+              ragTrace: traceWithIdentity,
+              ...(usedRag ? { answerMode: 'rag', usedRag: true } : {}),
+            };
+          });
         },
         onProcess: (processCard) => {
-          updateMessage(convStore, conversationId, aiMsgId, (m) => ({ ...m, processCard: processCard || m.processCard }));
+          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'processCard', processCard));
         },
         onGrounding: (grounding) => {
           // 运行时引用校验：溯源覆盖率随收尾下发，MessageBubble 展示"已溯源 xx%"徽标
-          updateMessage(convStore, conversationId, aiMsgId, (m) => ({ ...m, grounding: grounding || m.grounding }));
+          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'grounding', grounding));
         },
         onUsage: (usage) => {
           // token 用量随收尾下发，MessageBubble 展示输入/输出 token
-          updateMessage(convStore, conversationId, aiMsgId, (m) => ({ ...m, usage: usage || m.usage }));
+          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'usage', usage));
         },
         onFollowups: (items) => {
           // 追问建议随收尾下发，MessageBubble 渲染为可点击 chips
-          updateMessage(convStore, conversationId, aiMsgId, (m) => ({ ...m, followups: items || m.followups }));
+          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'followups', items));
         },
-        onRetry: () => {
+        onRetry: (nextAttempt) => {
+          const currentAttempt = getRun(runId)?.attempt || 0;
+          const attempt = Number.isInteger(nextAttempt) ? nextAttempt : currentAttempt + 1;
+          patchRun(runId, { attempt, lastSeq: 0, status: 'retrying' });
           isReconnecting.value = true;
-          reconnectAttempt.value = reconnectAttempt.value + 1;
+          reconnectAttempt.value = attempt;
           // 重试会从头开始流：清空已写入的部分内容，避免"半截+完整"重复拼接
-          cancelPendingRaf();
-          pendingContent = '';
+          cancelPendingRaf(false, runId);
           // 决策草稿同理：新尝试会重新流式输出决策内容，不清空会拼接成两份
-          decisionDraft.value = '';
-          updateMessage(convStore, conversationId, aiMsgId, (m) => ({ ...m, text: '', content: '' }));
+          clearRunDecisionDraft(runId);
+          updateMessage(convStore, conversationId, aiMsgId, (m) => clearMessageAttemptState(m));
         },
         onDone: () => {
-          // 必须在 cancelPendingRaf 之前捕获剩余内容（它会清空 pendingContent）
-          const remainingContent = pendingContent;
-          cancelPendingRaf();
-          if (remainingContent) {
-            updateMessage(convStore, conversationId, aiMsgId, (m) => {
-              const newText = getMessageText(m) + remainingContent;
-              return { ...m, text: newText, content: newText };
-            });
-          }
+          cancelPendingRaf(true, runId);
           // 直答回答：决策草稿即正文，done 时转正
-          if (decisionDraft.value) {
-            const draftText = decisionDraft.value;
-            decisionDraft.value = '';
+          const draftText = getRun(runId)?.decisionDraft || '';
+          if (draftText) {
+            clearRunDecisionDraft(runId);
             updateMessage(convStore, conversationId, aiMsgId, (m) => {
               const newText = getMessageText(m) + draftText;
               return { ...m, text: newText, content: newText };
@@ -430,13 +535,6 @@ export function useStreaming() {
             }
           }
 
-          currentStreamingId.value = null;
-          isLoading.value = false;
-          isReconnecting.value = false;
-          reconnectAttempt.value = 0;
-          activeStreamingConversationId.value = null;
-          currentAbortController = null;
-          decisionDraft.value = '';
           convStore.scheduleSaveCache(true);
           onStreamEvent?.('done');
           markResolved();
@@ -444,8 +542,8 @@ export function useStreaming() {
         },
         onError: (error) => {
           console.debug('[Stream] onError callback fired:', error.message);
-          cancelPendingRaf();
-          decisionDraft.value = '';
+          cancelPendingRaf(false, runId);
+          clearRunDecisionDraft(runId);
 
           // 空内容的 AI 消息标记为错误
           updateMessage(convStore, conversationId, aiMsgId, (m) => {
@@ -455,46 +553,87 @@ export function useStreaming() {
           // 用户的失败消息标记可重试
           updateMessage(convStore, conversationId, userMsg.id, (m) => ({ ...m, canRetry: true }));
 
-          currentStreamingId.value = null;
-          isLoading.value = false;
-          isReconnecting.value = false;
-          activeStreamingConversationId.value = null;
-          currentAbortController = null;
           convStore.scheduleSaveCache(true);
           onStreamEvent?.('error');
           markResolved();
           resolve();
         },
         onAbort: () => {
-          cancelPendingRaf();
-          decisionDraft.value = '';
-          isLoading.value = false;
-          isReconnecting.value = false;
-          activeStreamingConversationId.value = null;
-          currentAbortController = null;
+          cancelPendingRaf(false, runId);
+          clearRunDecisionDraft(runId);
           markResolved();
           resolve();
         },
       };
 
-      // 流仍在推进（任意回调触发）就不算失联，重置安全超时
+      callbacks.onEvent = (event) => {
+        const run = getRun(runId);
+        if (!run || !isCurrentRun(runId) || event?.runId !== runId) return;
+        if (event.attempt !== run.attempt || event.seq <= run.lastSeq) return;
+        patchRun(runId, { lastSeq: event.seq });
+        dispatchRunEvent(event, {
+          onStarted: () => patchRun(runId, { status: 'streaming' }),
+          onChunk: (content, meta) => callbacks.onChunk(content, meta),
+          onIntent: (intent) => callbacks.onIntent(intent),
+          onDecision: (decision) => callbacks.onDecision?.(decision),
+          onTrace: (trace) => callbacks.onTrace(trace),
+          onSources: (sources) => callbacks.onSources(sources),
+          onToolCall: (toolCall) => callbacks.onToolCall(toolCall),
+          onToolResult: (toolResult) => callbacks.onToolResult(toolResult),
+          onProcess: (processCard) => callbacks.onProcess(processCard),
+          onGrounding: (grounding) => callbacks.onGrounding(grounding),
+          onUsage: (usage) => callbacks.onUsage(usage),
+          onFollowups: (followups) => callbacks.onFollowups(followups),
+          onDone: () => callbacks.onDone(),
+          onError: (error) => callbacks.onError(error),
+          onUnknown: ({ type, data, origin }) => updateMessage(convStore, conversationId, aiMsgId, (m) => appendUnknownMessageFragment(m, {
+            type,
+            data,
+            origin,
+          })),
+        });
+      };
+
+      const terminalStatusByCallback = {
+        onDone: 'completed',
+        onError: 'failed',
+        onAbort: 'aborted',
+      };
+      // 流仍在推进时重置超时；迟到的旧 run 只能结束自己的 Promise，不能再写 UI。
       for (const key of Object.keys(callbacks)) {
         const fn = callbacks[key];
-        if (typeof fn === 'function') {
-          callbacks[key] = (...args) => {
-            if (!resolved) armSafetyTimeout();
-            return fn(...args);
-          };
-        }
+        if (typeof fn !== 'function') continue;
+        callbacks[key] = (...args) => {
+          if (!isCurrentRun(runId)) {
+            const lateRunEventType = key === 'onEvent' ? args[0]?.type : null;
+            if (terminalStatusByCallback[key] || TERMINAL_RUN_EVENT_TYPES.has(lateRunEventType)) {
+              markResolved();
+              resolve();
+            }
+            return undefined;
+          }
+          if (!resolved) armSafetyTimeout();
+          const result = fn(...args);
+          const terminalStatus = terminalStatusByCallback[key];
+          if (terminalStatus) finishRun(runId, terminalStatus);
+          return result;
+        };
       }
 
       try {
-        sendMessageStream(messageToSend, history, callbacks, {
-          signal: currentAbortController.signal,
+        const streamPromise = sendMessageStream(messageToSend, history, callbacks, {
+          signal: abortController.signal,
           conversationId,
           files: fileData ? [fileData] : [],
+          runId,
+          streamVersion: 1,
+          attempt: 0,
         });
+        if (streamPromise && typeof streamPromise.catch === 'function') {
+          void streamPromise.catch((error) => callbacks.onError(error));
+        }
       } catch (err) {
+        if (isCurrentRun(runId)) finishRun(runId, 'failed');
         markResolved();
         reject(err);
       }
@@ -529,33 +668,14 @@ export function useStreaming() {
     await sendMessage(trimmed, msgId, msg.files?.[0] || null);
   };
 
-  const abortCurrentRequest = () => {
-    decisionDraft.value = ''; // 中断即丢弃未转正的思考草稿
-    // 中断可能由「切换会话」触发：被中断的会话随即不再是最当前会话，
-    // 先记下它的 id，中断后定向补一次立即保存 + 后端同步，
-    // 否则半截消息只会留在本地缓存、永远同步不到后端
-    const affectedConvId = activeStreamingConversationId.value;
-    cancelPendingRaf(true); // 刷新 RAF 缓冲区到消息后中止，避免内容丢失
-    if (currentAbortController) {
-      currentAbortController.abort();
-      currentAbortController = null;
-      activeStreamingConversationId.value = null;
-      currentStreamingId.value = null;
-      isLoading.value = false;
-    }
-    if (affectedConvId) {
-      try {
-        useConversationStore().scheduleSaveCache(true, affectedConvId);
-      } catch {
-        // store 未就绪时忽略（缓存会由 beforeunload 兜底）
-      }
-    }
-  };
+  const abortCurrentRequest = () => abortRun(activeRunId.value);
 
   return {
     isLoading,
     currentStreamingId,
     activeStreamingConversationId,
+    activeRunId,
+    runsById,
     isConnected,
     isReconnecting,
     reconnectAttempt,
@@ -564,6 +684,7 @@ export function useStreaming() {
     retryMessage,
     editAndResendMessage,
     abortCurrentRequest,
+    abortRun,
     cleanup,
   };
 }

@@ -3,6 +3,7 @@ import { SemanticCache } from '../src/services/rag-semantic-cache.service';
 
 // 与被测服务同一 CJS 模块图取 config，保证开关修改对服务可见
 const config = require('../src/config');
+const { bumpCorpusVersion, resetCorpusVersionForTest } = require('../src/services/corpus-version.service');
 
 function getRetrievalModule() {
   delete require.cache[require.resolve('../src/services/rag-retrieval.service')];
@@ -104,7 +105,8 @@ describe('retrieveCandidates 语义缓存集成', () => {
     config.rag.semanticCacheEnabled = true;
     config.rag.cacheEnabled = true;
     retrieval = getRetrievalModule();
-    retrieval.semanticCache.clear();
+    retrieval.invalidateRetrievalCaches();
+    resetCorpusVersionForTest(0);
   });
 
   afterEach(() => {
@@ -128,6 +130,16 @@ describe('retrieveCandidates 语义缓存集成', () => {
       similarity: expect.any(Number),
     });
     expect(second.candidates).toEqual(searchResults);
+  });
+
+  it('知识库 generation 变化后不复用旧的精确或语义候选池', async () => {
+    const svc = makeSvc([1, 2, 3]);
+
+    await retrieval.retrieveCandidates(svc, '武理有几个食堂', {});
+    bumpCorpusVersion({ reason: 'test_document_update', docId: 'doc-1' });
+    await retrieval.retrieveCandidates(svc, '学校一共多少个食堂', {});
+
+    expect(svc.vectorStore.search).toHaveBeenCalledTimes(2);
   });
 
   it('开关关闭时行为与原来一致（每次都查向量库）', async () => {

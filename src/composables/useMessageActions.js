@@ -6,6 +6,8 @@
 
 import { useConversationStore } from '../stores/conversation.store.js';
 import { clearConversationMessages } from '../api/conversations.js';
+import { createWelcomeMessage } from '../utils/chatHelpers.js';
+import { toLlmHistoryMessage } from '../utils/messageFragments.js';
 
 export function useMessageActions() {
   const deleteMessage = (id) => {
@@ -46,8 +48,8 @@ export function useMessageActions() {
       if (msg.id !== 'welcome') convStore.unregisterMessage(msg.id);
     }
 
-    // 清空消息：保留欢迎消息
-    conv.messages = [{ id: 'welcome', role: 'model', content: '你好！我是武理小精灵，你的校园 AI 助手。有什么我可以帮你的吗？', timestamp: new Date() }];
+    // 清空消息：保留统一结构的欢迎消息
+    conv.messages = [createWelcomeMessage()];
     convStore.scheduleSaveCache(true);
 
     if (!convStore.isLocalSession(conv.id) && convStore.isBackendAvailable()) {
@@ -63,12 +65,11 @@ export function useMessageActions() {
     const convStore = useConversationStore();
     const messages = convStore.currentConversation?.messages || [];
     return messages
-      .filter((m) => m.id !== 'welcome' && !m.isError)
-      .map((m) => ({
-        role: m.role,
-        content: m.content,
-        timestamp: m.timestamp,
-      }));
+      .map((message) => {
+        const item = toLlmHistoryMessage(message);
+        return item ? { ...item, timestamp: message.timestamp } : null;
+      })
+      .filter(Boolean);
   };
 
   return {

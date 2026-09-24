@@ -20,7 +20,7 @@ import {
   Sparkles,
   ThumbsUp,
 } from 'lucide-vue-next';
-import { createKnowledgeTask, getOperationsDashboard } from '../api/operations.js';
+import { createKnowledgeTask, getOperationsDashboard, getRunEvents } from '../api/operations.js';
 import { useToastStore } from '../stores/toast.store.js';
 
 const dashboard = ref(null);
@@ -29,6 +29,11 @@ const errorMessage = ref('');
 const lastUpdated = ref('');
 const toast = useToastStore();
 const creatingTaskId = ref('');
+const runIdInput = ref('');
+const replayRunId = ref('');
+const replayEvents = ref([]);
+const replayLoading = ref(false);
+const replayError = ref('');
 
 const emptyQuality = {
   evaluation: null,
@@ -44,6 +49,8 @@ const operations = computed(() => dashboard.value?.operations || {
   tts: { total: 0, characters: 0, estimatedCostCny: 0 },
   estimatedCostCny: 0,
 });
+const clientPerformance = computed(() => dashboard.value?.clientPerformance || []);
+const latestMarkdownWorker = computed(() => [...clientPerformance.value].reverse().find((item) => item.name === 'markdown_worker') || null);
 const satisfaction = computed(() => dashboard.value?.satisfaction || {
   total: 0, like: 0, dislike: 0, satisfactionRate: null,
 });
@@ -120,6 +127,31 @@ const loadDashboard = async () => {
   } finally {
     isLoading.value = false;
   }
+};
+
+const loadRunEvents = async () => {
+  const runId = runIdInput.value.trim();
+  if (!runId || replayLoading.value) return;
+  replayLoading.value = true;
+  replayError.value = '';
+  replayEvents.value = [];
+  try {
+    const response = await getRunEvents(runId);
+    if (!response?.success) throw new Error(response?.error || 'RunEvent 回放加载失败');
+    replayRunId.value = response.data?.runId || runId;
+    replayEvents.value = response.data?.events || [];
+  } catch (error) {
+    replayError.value = error?.message || 'RunEvent 回放加载失败';
+  } finally {
+    replayLoading.value = false;
+  }
+};
+
+const replayEventTone = (type) => {
+  if (type === 'run.completed') return 'text-emerald-600 dark:text-emerald-300';
+  if (type === 'run.failed') return 'text-rose-600 dark:text-rose-300';
+  if (type === 'tool.call' || type === 'tool.result') return 'text-amber-600 dark:text-amber-300';
+  return 'text-slate-600 dark:text-slate-300';
 };
 
 onMounted(loadDashboard);
@@ -258,6 +290,7 @@ onMounted(loadDashboard);
             <div class="telemetry-line"><span>服务端错误</span><strong :class="operations.requests?.errors ? 'text-rose-600' : 'text-emerald-600'">{{ formatNumber(operations.requests?.errors) }}</strong></div>
             <div class="telemetry-line"><span>RAG 查询占比</span><strong>{{ operations.requests?.total ? `${Math.round((quality.rag?.ragQueries / operations.requests.total) * 100)}%` : '—' }}</strong></div>
             <div class="telemetry-line"><span>平均匹配父文档</span><strong>{{ quality.rag?.avgMatchedDocs || '0' }}</strong></div>
+            <div v-if="latestMarkdownWorker" class="telemetry-line"><span>Markdown Worker P95</span><strong>{{ formatLatency(latestMarkdownWorker.p95Ms) }}</strong></div>
           </div>
           <div class="latency-band mt-7">
             <div><span>请求 P50</span><strong>{{ formatLatency(operations.requests?.p50Ms) }}</strong></div>
@@ -315,6 +348,28 @@ onMounted(loadDashboard);
           <div class="audit-list"><div class="mb-3 flex items-center justify-between gap-3"><div class="text-xs font-black uppercase tracking-wider text-slate-400">需要管理员判断</div><span class="text-xs font-bold text-slate-400">高风险 / 资料不足</span></div><div v-if="riskAudit.highRisk.length" class="space-y-3"><article v-for="item in riskAudit.highRisk" :key="item.id" class="audit-item"><div class="flex items-start gap-3"><span class="risk-mark" :class="item.riskLevel === 'high' ? 'risk-mark-high' : 'risk-mark-medium'"><Flame :size="14" /></span><div class="min-w-0 flex-1"><div class="flex flex-wrap items-center gap-2"><span class="topic-tag">{{ item.topic?.label || '综合咨询' }}</span><span class="text-[10px] font-black uppercase tracking-wider text-slate-400">风险 {{ item.riskScore }}</span></div><p class="mt-2 text-sm font-bold leading-6 text-slate-800 dark:text-slate-100">{{ item.question }}</p><div class="mt-2 flex flex-wrap gap-2 text-[10px] font-bold text-slate-400"><span>{{ item.sources?.length ? `${item.sources.length} 个引用` : '无引用来源' }}</span><span>{{ item.knowledgeGap ? '建议补充知识库' : '需人工复核' }}</span></div></div><button v-if="item.knowledgeGap" class="task-button" :disabled="creatingTaskId === item.id" @click="createTask(item)"><FilePlus2 :size="14" />{{ creatingTaskId === item.id ? '创建中' : '建任务' }}</button></div></article></div><div v-else class="empty-table"><ShieldCheck :size="18" /> 当前没有待审核高风险回答</div></div>
         </div>
         <div v-if="riskAudit.tasks.length" class="mt-6 border-t border-slate-100 pt-4 dark:border-slate-800"><div class="text-xs font-black uppercase tracking-wider text-slate-400">最近补充文档任务</div><div class="mt-3 flex flex-wrap gap-2"><span v-for="task in riskAudit.tasks.slice(0, 4)" :key="task.id" class="task-pill"><ListChecks :size="13" />{{ task.title }}</span></div></div>
+      </section>
+
+      <section class="panel-card">
+        <div class="section-heading">
+          <div><div class="eyebrow">RunEvent replay</div><h2>运行事件回放</h2></div>
+          <div class="heading-chip"><Activity :size="14" /> 协议审计</div>
+        </div>
+        <form class="mt-5 flex flex-col gap-2 sm:flex-row" @submit.prevent="loadRunEvents">
+          <input v-model="runIdInput" class="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono outline-none focus:border-cyan-400 dark:border-slate-700 dark:bg-slate-900" placeholder="输入 runId，例如 run_..." />
+          <button type="submit" class="task-button" :disabled="replayLoading || !runIdInput.trim()">{{ replayLoading ? '读取中…' : '加载回放' }}</button>
+        </form>
+        <p v-if="replayError" class="mt-2 text-xs font-semibold text-rose-600 dark:text-rose-300">{{ replayError }}</p>
+        <div v-if="replayRunId" class="mt-5 rounded-xl border border-slate-100 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900/50">
+          <div class="flex items-center justify-between gap-3 text-xs font-bold text-slate-600 dark:text-slate-300"><span class="font-mono">{{ replayRunId }}</span><span>{{ replayEvents.length }} 个事件</span></div>
+          <ol v-if="replayEvents.length" class="mt-3 space-y-2">
+            <li v-for="event in replayEvents" :key="`${event.attempt}:${event.seq}`" class="rounded-lg border border-slate-100 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-950/50">
+              <div class="flex flex-wrap items-center gap-2 text-[10px] font-bold"><span class="font-mono text-slate-400">#{{ event.seq }}</span><span :class="replayEventTone(event.type)">{{ event.type }}</span><span class="text-slate-400">attempt {{ event.attempt }}</span><span class="ml-auto text-slate-400">{{ formatDate(event.recordedAt) }}</span></div>
+              <pre v-if="event.data && Object.keys(event.data).length" class="mt-1 max-h-28 overflow-auto whitespace-pre-wrap break-all text-[10px] text-slate-500 dark:text-slate-400">{{ JSON.stringify(event.data, null, 2) }}</pre>
+            </li>
+          </ol>
+          <p v-else class="mt-3 text-xs text-slate-400">没有可回放事件。请确认后端已开启 `RUN_EVENT_LOG_ENABLED=true`。</p>
+        </div>
       </section>
 
       <footer class="flex flex-wrap items-center justify-between gap-3 px-1 pb-4 text-xs font-semibold text-slate-400">

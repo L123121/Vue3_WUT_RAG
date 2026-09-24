@@ -33,10 +33,91 @@ let pendingCallbacks = new Map();
 let idCounter = 0;
 
 const WORKER_TIMEOUT_MS = 5000;
+const MAX_DURATION_SAMPLES = 200;
+const workerStats = {
+  submitted: 0,
+  completed: 0,
+  failed: 0,
+  timedOut: 0,
+  staleResults: 0,
+  contentChars: 0,
+  durations: [],
+};
+
+const now = () => globalThis.performance?.now?.() || Date.now();
+const recordDuration = (duration) => {
+  if (!Number.isFinite(duration) || duration < 0) return;
+  workerStats.durations.push(Math.round(duration));
+  if (workerStats.durations.length > MAX_DURATION_SAMPLES) {
+    workerStats.durations.splice(0, workerStats.durations.length - MAX_DURATION_SAMPLES);
+  }
+};
+const percentile = (values, ratio) => {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * ratio) - 1)];
+};
+
+export const getMarkdownWorkerStats = () => ({
+  submitted: workerStats.submitted,
+  completed: workerStats.completed,
+  failed: workerStats.failed,
+  timedOut: workerStats.timedOut,
+  staleResults: workerStats.staleResults,
+  contentChars: workerStats.contentChars,
+  queueDepth: pendingCallbacks.size,
+  queued: Math.max(pendingCallbacks.size - 1, 0),
+  inFlight: pendingCallbacks.size > 0 ? 1 : 0,
+  duration: {
+    p50Ms: percentile(workerStats.durations, 0.5),
+    p95Ms: percentile(workerStats.durations, 0.95),
+    sampleCount: workerStats.durations.length,
+  },
+});
+
+let lastReportedAt = 0;
+
+function reportMarkdownWorkerStats() {
+  if (!import.meta.env.PROD || typeof fetch !== 'function') return;
+  const timestamp = Date.now();
+  if (timestamp - lastReportedAt < 60_000) return;
+  lastReportedAt = timestamp;
+  const body = JSON.stringify({ name: 'markdown_worker', ...getMarkdownWorkerStats() });
+  try {
+    if (typeof navigator !== 'undefined' && navigator.sendBeacon && typeof Blob !== 'undefined') {
+      navigator.sendBeacon('/api/metrics/client-performance', new Blob([body], { type: 'application/json' }));
+      return;
+    }
+  } catch {
+    // fetch fallback below
+  }
+  fetch('/api/metrics/client-performance', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+    keepalive: true,
+  }).catch(() => {});
+}
+
+export const recordMarkdownWorkerStaleResult = () => {
+  workerStats.staleResults += 1;
+};
+
+function settleEntry(entry, outcome) {
+  if (!entry || entry.settled) return;
+  entry.settled = true;
+  recordDuration(now() - entry.startedAt);
+  workerStats.contentChars += entry.contentLength || 0;
+  if (outcome === 'completed') workerStats.completed += 1;
+  else workerStats.failed += 1;
+  reportMarkdownWorkerStats();
+}
 
 function rejectAllPending(reason) {
   for (const [, entry] of pendingCallbacks) {
     if (entry.timer) clearTimeout(entry.timer);
+    settleEntry(entry, 'failed');
     entry.reject(reason);
   }
   pendingCallbacks.clear();
@@ -57,6 +138,7 @@ function initWorker() {
       if (entry) {
         pendingCallbacks.delete(id);
         if (entry.timer) clearTimeout(entry.timer);
+        settleEntry(entry, 'completed');
         entry.resolve(html);
       }
     };
@@ -96,16 +178,33 @@ export function useMarkdownWorker() {
 
       // 独立超时：到点未回 → reject 并自我清理，确保 entry 不残留
       const timer = setTimeout(() => {
-        if (pendingCallbacks.has(id)) {
+        const entry = pendingCallbacks.get(id);
+        if (entry) {
           pendingCallbacks.delete(id);
+          workerStats.timedOut += 1;
+          settleEntry(entry, 'failed');
           reject(new Error('markdown worker timeout'));
         }
       }, WORKER_TIMEOUT_MS);
 
-      pendingCallbacks.set(id, { resolve, reject, timer });
-      worker.postMessage({ id, content });
+      const entry = { resolve, reject, timer, startedAt: now(), settled: false, contentLength: String(content || '').length };
+      pendingCallbacks.set(id, entry);
+      workerStats.submitted += 1;
+      try {
+        worker.postMessage({ id, content });
+      } catch (error) {
+        pendingCallbacks.delete(id);
+        clearTimeout(timer);
+        settleEntry(entry, 'failed');
+        reject(error);
+      }
     });
   };
 
-  return { isReady, renderInWorker };
+  return {
+    isReady,
+    renderInWorker,
+    getStats: getMarkdownWorkerStats,
+    recordStaleResult: recordMarkdownWorkerStaleResult,
+  };
 }

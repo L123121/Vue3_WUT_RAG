@@ -54,6 +54,7 @@
 | 入库清洗 | `doc-sanitizer.service.js` | prompt-injection 行清洗 + OCR 乱码占比闸门 |
 | 文档去重 | `document.service.js` | 内容 sha256 重复上传直接返回已有文档 |
 | 质量治理审计 | `quality-governance.service.js` | 六大校园主题分类 + 不确定性话术检测 |
+| Wiki/RAG 治理 | `wiki.service.js` + `rag.service.js` | 正文修订 stale、管理员重新审核、Wiki/Qdrant 混合候选与统一引用编号 |
 
 ## 五、评测体系（`scripts/rag-eval/`）
 
@@ -62,7 +63,7 @@
 | 检索评测 | Recall/MRR/nDCG@5/HitRate，full-coverage 32 题基线：97.4% / 0.977 / 0.970 / 100% |
 | 消融实验 | 融合策略（加权 vs RRF k=10/k=60）、MMR 开关，结论沉淀在 CLAUDE.md 与 README |
 | RAGAS 生成评测 | Faithfulness 91.7%（campus-qa 32 题，judge 模型独立 Key） |
-| Agent 路由评测 | routing 数据集验证 chat/rag/agent 分流正确率 |
+| Agent 路由评测 | routing 数据集验证 chat/rag/agent 分流正确率；artifact 大结果读取闭环有 AgentService 回归 |
 | 回归门禁 | CONTRIBUTING 约定：检索链路改动必须跑基线，回退需说明 |
 
 ## 六、工程与运维
@@ -71,7 +72,7 @@
 | --- | --- |
 | CI/CD | Lint → Test → Build → Trivy 扫描 → ECS 部署 + 健康检查回滚（`.github/workflows/deploy.yml`） |
 | 备份恢复 | `scripts/backup.sh`：SQLite better-sqlite3 在线备份 + Qdrant snapshot API + 轮转 |
-| 存储 | SQLite WAL 默认 / Redis 可切（`memory-store.js` 双后端同接口） |
-| 安全 | httpOnly JWT Cookie、Helmet、限流、配额、MIME 校验、工具 Schema 校验 |
-| 可观测 | 结构化日志 + metrics 服务 + 运营看板（OperationsDashboard.vue）+ Prometheus /api/metrics/prometheus 抓取端点（env 门控 + token）+ OTLP trace 导出（otel-tracing.service.js，OTEL_EXPORTER_OTLP_ENDPOINT 门控，HTTP/RAG 阶段/LLM 手动埋点） |
+| 存储 | SQLite WAL（`memory-store.js` 当前唯一实现）+ Qdrant 向量库 |
+| 安全 | httpOnly JWT Cookie、Helmet、限流、配额、私有附件用户/会话归属、MIME 校验、工具 Schema 校验 |
+| 可观测 | 结构化日志 + RunEvent v1（SSE/JSONL 回放，默认关闭，`/api/metrics/runs/:runId/events` 管理员接口）+ 运行完成率/首事件/P95/工具与降级指标 + 运营看板（OperationsDashboard.vue）+ Prometheus `/api/metrics/prometheus`（env 门控 + token）+ OTLP trace 导出；Markdown Worker 低频上报队列深度、耗时与过期结果到 `/api/metrics/client-performance` |
 | 部署 | Docker 三阶段（better-sqlite3 强制编译验证）+ 宿主机 nginx 反代 |

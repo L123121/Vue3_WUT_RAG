@@ -13,6 +13,7 @@ const props = defineProps({
   isConnected: { type: Boolean, default: true },
   isReconnecting: { type: Boolean, default: false },
   reconnectAttempt: { type: Number, default: 0 },
+  conversationId: { type: String, default: '' },
 });
 
 const emit = defineEmits(['send', 'error', 'command']);
@@ -110,7 +111,7 @@ const handleSend = async () => {
   let fileData = null;
   if (selectedFile.value) {
     try {
-      const res = await uploadChatFile(selectedFile.value);
+      const res = await uploadChatFile(selectedFile.value, props.conversationId);
       if (res.success) fileData = res.data;
       else { toast.error('文件上传失败'); return; }
     } catch (e) {

@@ -11,6 +11,29 @@ const DEFAULT_TIMEOUT = 60000;
 const DEFAULT_RETRIES = 2;
 const RETRYABLE_STATUS = [408, 429, 502, 503, 504];
 
+const waitForRetry = (delayMs, signal) => new Promise((resolve, reject) => {
+  if (signal?.aborted) {
+    const error = new Error('客户端已断开');
+    error.name = 'AbortError';
+    error.code = 'CLIENT_ABORTED';
+    reject(error);
+    return;
+  }
+  const timer = setTimeout(() => {
+    signal?.removeEventListener('abort', onAbort);
+    resolve();
+  }, delayMs);
+  const onAbort = () => {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', onAbort);
+    const error = new Error('客户端已断开');
+    error.name = 'AbortError';
+    error.code = 'CLIENT_ABORTED';
+    reject(error);
+  };
+  signal?.addEventListener('abort', onAbort, { once: true });
+});
+
 // 全局 keep-alive agent（连接池）
 // 注意：https.Agent({ timeout }) 是 socket 连接后设置的超时，**对活动请求同样生效**，
 // 不是"空闲连接超时"。此前误缩短为 15s，导致 StepFun 流式首 token（常需 4~26s）
@@ -32,7 +55,7 @@ const agent = new https.Agent({
  * @param {string} [options.body] - JSON 字符串体
  * @returns {Promise<{statusCode, data, headers}>}
  */
-async function request(options, body) {
+async function request(options, body, signal) {
   const timeout = options.timeout || DEFAULT_TIMEOUT;
   const retries = options.retries ?? DEFAULT_RETRIES;
   const retryOn5xx = options.retryOn5xx !== false;
@@ -49,11 +72,12 @@ async function request(options, body) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     const start = Date.now();
     try {
-      const result = await _sendRequest(reqOptions, body);
+      const result = await _sendRequest(reqOptions, body, signal);
       metrics.recordLatency('http', Date.now() - start);
       return result;
     } catch (err) {
       lastError = err;
+      if (signal?.aborted) throw err;
       const shouldRetry = attempt < retries && (
         err.code === 'ECONNRESET' ||
         err.code === 'ETIMEDOUT' ||
@@ -62,7 +86,7 @@ async function request(options, body) {
       );
       if (!shouldRetry) break;
       const delay = Math.min(1000 * Math.pow(2, attempt) + Math.random() * 500, 10000);
-      await new Promise(r => setTimeout(r, delay));
+      await waitForRetry(delay, signal);
     }
   }
   throw lastError;
@@ -109,7 +133,7 @@ async function requestStream(options, body, signal) {
       );
       if (!shouldRetry) break;
       const delay = Math.min(1000 * Math.pow(2, attempt) + Math.random() * 500, 10000);
-      await new Promise(r => setTimeout(r, delay));
+      await waitForRetry(delay, signal);
     }
   }
   throw lastError;
@@ -168,35 +192,65 @@ function _sendStreamRequest(options, body, signal) {
 /**
  * 内部：发送单次请求
  */
-function _sendRequest(options, body) {
+function _sendRequest(options, body, signal) {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let onAbort = null;
+    const cleanup = () => {
+      if (signal && onAbort) signal.removeEventListener('abort', onAbort);
+    };
+    const rejectOnce = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const resolveOnce = (value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(value);
+    };
     const req = https.request(options, (res) => {
       const decoder = new StringDecoder('utf8');
       let data = '';
       res.on('data', chunk => { data += decoder.write(chunk); });
+      res.on('close', cleanup);
       res.on('end', () => {
         data += decoder.end();
         if (res.statusCode < 200 || res.statusCode >= 300) {
           const err = new Error(`HTTP ${res.statusCode}: ${data.slice(0, 200)}`);
           err.statusCode = res.statusCode;
-          return reject(err);
+          return rejectOnce(err);
         }
         try {
           const json = JSON.parse(data);
-          resolve({ statusCode: res.statusCode, data: json, headers: res.headers });
+          resolveOnce({ statusCode: res.statusCode, data: json, headers: res.headers });
         } catch {
-          resolve({ statusCode: res.statusCode, data, headers: res.headers });
+          resolveOnce({ statusCode: res.statusCode, data, headers: res.headers });
         }
       });
     });
 
-    req.on('error', reject);
+    req.on('error', rejectOnce);
     req.on('timeout', () => {
       req.destroy();
       const err = new Error('请求超时');
       err.code = 'ETIMEDOUT';
-      reject(err);
+      rejectOnce(err);
     });
+
+    if (signal) {
+      onAbort = () => {
+        req.destroy();
+        const error = new Error('客户端已断开');
+        error.name = 'AbortError';
+        error.code = 'CLIENT_ABORTED';
+        rejectOnce(error);
+      };
+      if (signal.aborted) return onAbort();
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
 
     if (body) req.write(body);
     req.end();
