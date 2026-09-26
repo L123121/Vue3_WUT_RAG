@@ -2,85 +2,114 @@
   {
     "question": "武汉理工大学有几个校区？分别叫什么？",
     "expected_answer": "三个校区：马房山、余家头、南湖。",
-    "relevant_doc_ids": ["doc_9a78cba7", "doc_4dcd7c94"],
+    "relevant_doc_ids": [
+      "doc_a69b98e5119f694cb5cd5c73a1c56393",
+      "doc_4b956c30b8728c57c226d0b91276c731"
+    ],
     "category": "学校概况"
   },
   {
     "question": "武汉理工大学图书馆的开放时间是什么？",
     "expected_answer": "每天 8:00-22:00。",
-    "relevant_doc_ids": ["doc_9a78cba7"],
+    "relevant_doc_ids": [
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
+    ],
     "category": "学校概况"
   },
   {
     "question": "怎么办理校园卡补办？",
     "expected_answer": "携带身份证到学生事务大厅办理。",
-    "relevant_doc_ids": ["doc_9a78cba7"],
+    "relevant_doc_ids": [
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
+    ],
     "category": "学校概况"
   },
   {
     "question": "什么是面向对象编程中的多态？",
     "expected_answer": "多态是面向对象三大特性之一，指同一操作作用于不同对象可以有不同的解释和执行结果。",
-    "relevant_doc_ids": ["doc_c252d16d"],
+    "relevant_doc_ids": [
+      "doc_0229975145df745e4e35eba9e1071a0a"
+    ],
     "category": "专业课程"
   },
   {
     "question": "软件工程中的瀑布模型有哪些阶段？",
     "expected_answer": "需求分析、设计、实现、测试、维护。",
-    "relevant_doc_ids": ["doc_c252d16d"],
+    "relevant_doc_ids": [
+      "doc_0229975145df745e4e35eba9e1071a0a"
+    ],
     "category": "专业课程"
   },
   {
     "question": "什么是等价关系？",
     "expected_answer": "等价关系是满足自反性、对称性和传递性的二元关系。",
-    "relevant_doc_ids": ["doc_295ada27"],
+    "relevant_doc_ids": [
+      "doc_354e9ec7cc056e450c2cf4f7c71223a1"
+    ],
     "category": "专业课程"
   },
   {
     "question": "二分查找的时间复杂度是多少？",
     "expected_answer": "O(log n)。",
-    "relevant_doc_ids": ["doc_ac1f7d77"],
+    "relevant_doc_ids": [
+      "doc_fb78f4c97e1be296c218a98c3cc2632a"
+    ],
     "category": "面试刷题"
   },
   {
     "question": "什么是哈希表？它的平均查找时间复杂度是多少？",
     "expected_answer": "哈希表是通过键直接访问的数据结构，平均查找时间复杂度 O(1)。",
-    "relevant_doc_ids": ["doc_ac1f7d77"],
+    "relevant_doc_ids": [
+      "doc_fb78f4c97e1be296c218a98c3cc2632a"
+    ],
     "category": "面试刷题"
   },
   {
     "question": "快排的时间复杂度是多少？",
     "expected_answer": "平均 O(n log n)，最坏 O(n²)。",
-    "relevant_doc_ids": ["doc_ac1f7d77"],
+    "relevant_doc_ids": [
+      "doc_fb78f4c97e1be296c218a98c3cc2632a"
+    ],
     "category": "面试刷题"
   },
   {
     "question": "什么是 RAG？",
     "expected_answer": "检索增强生成，通过检索外部知识库辅助 LLM 生成回答。",
-    "relevant_doc_ids": ["doc_f0162488"],
+    "relevant_doc_ids": [
+      "doc_62e0558004ecae21959909f0061ea8c2"
+    ],
     "category": "AI学习"
   },
   {
     "question": "什么是 Agent？",
     "expected_answer": "智能体，能够自主感知环境、做出决策并执行行动的 AI 系统。",
-    "relevant_doc_ids": ["doc_f0162488"],
+    "relevant_doc_ids": [
+      "doc_62e0558004ecae21959909f0061ea8c2"
+    ],
     "category": "AI学习"
   },
   {
     "question": "学校的社团活动有哪些？",
     "expected_answer": "有学术科技类、文化艺术类、体育竞技类、志愿服务类等。",
-    "relevant_doc_ids": ["doc_9a78cba7"],
+    "relevant_doc_ids": [
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
+    ],
     "category": "学校概况"
   },
   {
     "question": "什么是软件工程中的需求分析？",
     "expected_answer": "需求分析是软件工程的第一阶段，旨在明确用户需求和系统功能。",
-    "relevant_doc_ids": ["doc_c252d16d"],
+    "relevant_doc_ids": [
+      "doc_0229975145df745e4e35eba9e1071a0a"
+    ],
     "category": "专业课程"
   },
   {
     "question": "链表的反转怎么实现？",
     "expected_answer": "通过迭代或递归方式，逐个改变节点的指向来实现反转。",
-    "relevant_doc_ids": ["doc_ac1f7d77"],
+    "relevant_doc_ids": [
+      "doc_fb78f4c97e1be296c218a98c3cc2632a"
+    ],
     "category": "面试刷题"
   },
   {

@@ -32,7 +32,9 @@ function loadLegacyMap() {
   const map = new Map();
   for (const doc of manifest.docs || []) {
     if (!doc.legacyId) continue;
-    map.set(doc.legacyId, deriveDocId(doc.title, doc.category));
+    // legacyId 兼容字符串与数组（同一文档的多代历史 UUID）
+    const ids = Array.isArray(doc.legacyId) ? doc.legacyId : [doc.legacyId];
+    for (const id of ids) map.set(id, deriveDocId(doc.title, doc.category));
   }
   return map;
 }
@@ -46,6 +48,18 @@ function rewrite(node, legacyMap, stats) {
     }
     if (/^doc_[0-9a-f-]{36}$/.test(node)) {
       stats.unresolved.add(node);
+      return node;
+    }
+    // 早期 qa.json 用过老 UUID 的 8 位前缀做引用：唯一命中才迁移，歧义或未命中一律报出
+    if (/^doc_[0-9a-f]{8}$/.test(node)) {
+      const hits = [...legacyMap.keys()].filter((id) => id.startsWith(`${node}-`));
+      if (hits.length === 1) {
+        stats.replaced += 1;
+        stats.prefixResolved += 1;
+        return legacyMap.get(hits[0]);
+      }
+      stats.unresolved.add(node);
+      return node;
     }
     return node;
   }
@@ -71,7 +85,7 @@ function main() {
     const full = path.join(DATASET_DIR, file);
     const raw = fs.readFileSync(full, 'utf8');
     const data = JSON.parse(raw);
-    const stats = { replaced: 0, unresolved: new Set() };
+    const stats = { replaced: 0, prefixResolved: 0, unresolved: new Set() };
     const next = rewrite(data, legacyMap, stats);
 
     stats.unresolved.forEach(id => unresolvedAll.add(id));
@@ -79,7 +93,8 @@ function main() {
 
     if (stats.replaced > 0) {
       changedFiles += 1;
-      const note = `  ${file}: 替换 ${stats.replaced} 处`;
+      const prefixNote = stats.prefixResolved > 0 ? `（其中 ${stats.prefixResolved} 处经 8 位前缀解析）` : '';
+      const note = `  ${file}: 替换 ${stats.replaced} 处${prefixNote}`;
       if (mode === 'write') {
         fs.writeFileSync(full, `${JSON.stringify(next, null, 2)}\n`, 'utf8');
         console.log(`${note}  → 已写入`);

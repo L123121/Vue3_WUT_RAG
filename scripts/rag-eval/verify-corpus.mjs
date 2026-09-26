@@ -74,7 +74,9 @@ async function main() {
     manifestIds.add(expected);
     if (!liveIds.has(expected)) {
       missing += 1;
-      const legacy = entry.legacyId ? `（改造前 ID ${entry.legacyId}）` : '';
+      const legacy = entry.legacyId
+        ? `（改造前 ID ${Array.isArray(entry.legacyId) ? entry.legacyId.join(' / ') : entry.legacyId}）`
+        : '';
       problems.push(`清单文档缺失: 《${entry.title}》[${entry.category}] 期望 ID ${expected} ${legacy}`);
     }
   }
@@ -89,11 +91,20 @@ async function main() {
   }
 
   // ── 方向三：数据集引用的文档是否都在库里 ──
+  // 区分两类：引用清单内文档（重入库后即对齐，只提示）vs 引用清单外文档（地面真值坏了，算偏差）
   const datasetIds = collectDatasetDocIds();
-  for (const [id, files] of datasetIds) {
-    if (!liveIds.has(id)) {
-      problems.push(`数据集引用了库中不存在的文档: ${id}（出现在 ${[...files].join(', ')}）`);
+  const pendingReimport = [...datasetIds.keys()].filter((id) => !liveIds.has(id) && manifestIds.has(id));
+  if (pendingReimport.length > 0) {
+    console.log(
+      `\nℹ️  数据集引用了 ${pendingReimport.length} 篇清单内但暂未入库的文档（按清单重入库后自动对齐，无需改数据集）：`
+    );
+    for (const id of pendingReimport) {
+      console.log(`   · ${id}（出现在 ${[...datasetIds.get(id)].join(', ')}）`);
     }
+  }
+  for (const [id, files] of datasetIds) {
+    if (liveIds.has(id) || manifestIds.has(id)) continue;
+    problems.push(`数据集引用了清单与库中都不存在的文档: ${id}（出现在 ${[...files].join(', ')}）`);
   }
 
   console.log(`清单文档缺失: ${missing}`);

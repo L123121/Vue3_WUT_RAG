@@ -126,7 +126,7 @@ docId 由 `backend/src/utils/doc-id.js` 从 **(标题, 类别)** 确定性派生
 
 复现步骤：把 `corpus-manifest.json` 里的文档按清单标题/类别入库 → `npm run eval:corpus-check` 通过 → 再跑评测。
 
-> 已知偏差：`full-coverage-deploy-qa.json` 有 5 处引用了当前知识库中不存在的 `doc_daff1331-…`，`eval:corpus-check` 会报出来。这些条目的地面真值需要修正，否则会恒定判为未召回、系统性拉低该数据集的分数。
+> **对齐状态（2026-09-26）**：数据集 ↔ 清单已完全对齐——21 处历史引用全部归一到确定性 ID（`qa.json` 的 15 处老 UUID 8 位前缀截断、`full-coverage-deploy-qa.json` 的 5 处《Agent学习笔记》更早世代 UUID `doc_daff1331-…`，后者已作为别名登记进清单 `legacyId`）。剩余偏差全在知识库侧：现库 20 篇文档全部还是改造前的随机 UUID 世代，需按清单重新入库（同内容的旧 ID 文档删除、重传后即得确定性 ID）；其中 5 篇（医疗/体育/交通指南、数据库/操作系统高频面试题）不在清单内，需先决定是补进清单还是移出知识库。`eval:corpus-check` 会把「清单内暂缺（重入库后自动对齐）」与「清单外真死引用」分开报告。
 
 ## 页面路由
 
