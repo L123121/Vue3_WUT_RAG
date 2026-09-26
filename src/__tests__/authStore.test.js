@@ -42,23 +42,31 @@ describe('authStore', () => {
     await logoutPromise;
   });
 
-  // 以下用例依赖后端 API,需 mock fetch 或启动后端后再运行
-  // TODO: 实现 mock fetch 或配置 CI 环境启动后端
-  describe.skip('集成测试(需后端)', () => {
-    it('logs in with user data', () => {
+  // 以下用例曾因依赖后端 API 被 skip（且对的是已废弃的 login({name,studentId}) 内存 API）。
+  // 现按现行 auth.store 契约重写：stub fetch 覆盖 postAuth 响应，验证状态与持久化行为。
+  describe('登录/登出状态机(mock fetch)', () => {
+    const authResponse = (user) => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true, data: { user } }),
+    });
+
+    it('logs in with user data', async () => {
+      vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(authResponse({ id: 'u1', name: 'Test', studentId: '123' }))));
       const store = useAuthStore();
-      store.login({ name: 'Test', studentId: '123' });
+      const loggedIn = await store.login('Test', '123');
 
       expect(store.isAuthenticated).toBe(true);
       expect(store.user.name).toBe('Test');
       expect(store.user.studentId).toBe('123');
+      // 后端未下发 role 时默认普通用户
+      expect(loggedIn.role).toBe('user');
     });
 
     it('logs out and clears state', async () => {
+      vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(authResponse({ id: 'u1', name: 'Test', studentId: '123' }))));
       const store = useAuthStore();
-      store.login({ name: 'Test', studentId: '123' });
-      // Mock fetch for logout call
-      globalThis.fetch = vi.fn(() => Promise.resolve({ ok: true }));
+      await store.login('Test', '123');
       await store.logout();
 
       expect(store.isAuthenticated).toBe(false);
@@ -66,28 +74,41 @@ describe('authStore', () => {
       expect(localStorage.getItem('user')).toBeNull();
     });
 
-    it('updates user profile', () => {
+    it('updates user profile', async () => {
+      vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(authResponse({ id: 'u1', name: 'Old', studentId: '123' }))));
       const store = useAuthStore();
-      store.login({ name: 'Old', studentId: '123' });
+      await store.login('Old', '123');
       store.updateUser({ name: 'New' });
 
       expect(store.user.name).toBe('New');
     });
 
-    it('persists user to localStorage', () => {
+    it('persists user to localStorage', async () => {
+      vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(authResponse({ id: 'u1', name: 'Test', studentId: '123' }))));
       const store = useAuthStore();
-      store.login({ name: 'Test', studentId: '123' });
+      await store.login('Test', '123');
 
       const stored = JSON.parse(localStorage.getItem('user'));
       expect(stored.name).toBe('Test');
-      expect(stored.studentId).toBe('123');
+      expect(stored.role).toBe('user');
     });
 
-    it('does not persist token to localStorage', () => {
+    it('does not persist token to localStorage', async () => {
+      vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(authResponse({ id: 'u1', name: 'Test', studentId: '123' }))));
       const store = useAuthStore();
-      store.login({ name: 'Test', studentId: '123' });
+      await store.login('Test', '123');
 
+      // 会话凭证走 HttpOnly cookie，localStorage 只存用户资料
       expect(localStorage.getItem('token')).toBeNull();
+    });
+
+    it('rejects empty credentials without network call', async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal('fetch', fetchMock);
+      const store = useAuthStore();
+
+      await expect(store.login('Test', '')).rejects.toMatchObject({ code: 'MISSING_CREDENTIALS' });
+      expect(fetchMock).not.toHaveBeenCalled();
     });
   });
 });

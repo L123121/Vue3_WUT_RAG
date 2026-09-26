@@ -74,3 +74,4 @@ arrow.tar.gz
 # 本地 agent 工作目录（规划/便签等过程文档，不公开）
 .claude/
 .workbuddy/
+backend/src/data/
