@@ -1,13 +1,13 @@
 const { Router } = require('express');
 const { requireAuth, requireAdmin } = require('../middleware/auth.middleware');
-const { RagService } = require('../services/rag.service');
-const { aiService } = require('../services/ai.service');
-const { JudgeService } = require('../services/judge.service');
-const { metrics } = require('../services/metrics.service');
-const { operationalMetrics } = require('../services/operational-metrics.service');
+const { RagService } = require('../services/rag/rag.service');
+const { aiService } = require('../services/llm/ai.service');
+const { JudgeService } = require('../services/agent/judge.service');
+const { metrics } = require('../services/observability/metrics.service');
+const { operationalMetrics } = require('../services/observability/operational-metrics.service');
 const { getFeedbackSummary } = require('../controllers/rag.controller');
-const { saveEvaluation, getEvaluations, compareEvaluations, importEvaluation, getEvaluationPayload, updateEvaluationScores } = require('../services/quality-governance.service');
-const { doubleJudgeStepForRatio, shouldDoubleJudge, computeJudgeAgreement, averageJudgeResults } = require('../services/judge-agreement.service');
+const { saveEvaluation, getEvaluations, compareEvaluations, importEvaluation, getEvaluationPayload, updateEvaluationScores } = require('../services/agent/quality-governance.service');
+const { doubleJudgeStepForRatio, shouldDoubleJudge, computeJudgeAgreement, averageJudgeResults } = require('../services/agent/judge-agreement.service');
 const config = require('../config');
 
 const router = Router();

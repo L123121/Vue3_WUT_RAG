@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 function getRagService() {
-  delete require.cache[require.resolve('../src/services/rag.service')];
-  return require('../src/services/rag.service').RagService;
+  delete require.cache[require.resolve('../src/services/rag/rag.service')];
+  return require('../src/services/rag/rag.service').RagService;
 }
 
 describe('RagService', () => {

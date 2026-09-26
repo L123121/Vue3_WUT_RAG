@@ -10,8 +10,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  */
 function getRagService() {
   delete require.cache[require.resolve('../src/config')];
-  delete require.cache[require.resolve('../src/services/rag.service')];
-  return require('../src/services/rag.service').RagService;
+  delete require.cache[require.resolve('../src/services/rag/rag.service')];
+  return require('../src/services/rag/rag.service').RagService;
 }
 
 // 构造带 _rerankScore 和 parentText 的父段候选（docId 用于同文档内去重判定）

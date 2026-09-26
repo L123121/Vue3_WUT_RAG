@@ -6,7 +6,7 @@ const {
   escapeLabelValue,
   LATENCY_BUCKETS_MS,
   METRIC_PREFIX,
-} = require('../src/services/prometheus-metrics.service');
+} = require('../src/services/observability/prometheus-metrics.service');
 
 const fixtureData = {
   totals: {

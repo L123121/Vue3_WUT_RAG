@@ -3,23 +3,23 @@
  */
 const express = require('express');
 const { requireAuth } = require('../middleware/auth.middleware');
-const { operationalMetrics } = require('../services/operational-metrics.service');
-const { metrics } = require('../services/metrics.service');
+const { operationalMetrics } = require('../services/observability/operational-metrics.service');
+const { metrics } = require('../services/observability/metrics.service');
 const { getFeedbackSummary } = require('../controllers/rag.controller');
 const {
   getEvaluations,
   compareEvaluations,
   getRiskSummary,
   createKnowledgeTask,
-} = require('../services/quality-governance.service');
-const { readRunEvents } = require('../services/run-event-log.service');
+} = require('../services/agent/quality-governance.service');
+const { readRunEvents } = require('../services/observability/run-event-log.service');
 const config = require('../config');
 const {
   renderPrometheusMetrics,
   collectPrometheusSnapshot,
   ensureEventLoopMonitor,
-} = require('../services/prometheus-metrics.service');
-const { logEvent } = require('../services/observability.service');
+} = require('../services/observability/prometheus-metrics.service');
+const { logEvent } = require('../services/observability/observability.service');
 
 const router = express.Router();
 

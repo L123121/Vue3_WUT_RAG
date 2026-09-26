@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-const { AudioService, normalizeSpeechText } = require('../src/services/audio.service');
+const { AudioService, normalizeSpeechText } = require('../src/services/media/audio.service');
 
 describe('audio.service', () => {
   it('将 Markdown 回答转换成适合朗读的纯文本', () => {

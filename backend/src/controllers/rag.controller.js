@@ -1,11 +1,11 @@
 "use strict";
 
 const path = require('path');
-const { RagService } = require('../services/rag.service');
-const { aiService } = require('../services/ai.service');
-const { DocumentService } = require('../services/document.service');
-const { redis: store } = require('../services/memory-store');
-const { MemoryService } = require('../services/memory.service');
+const { RagService } = require('../services/rag/rag.service');
+const { aiService } = require('../services/llm/ai.service');
+const { DocumentService } = require('../services/knowledge/document.service');
+const { redis: store } = require('../services/memory/memory-store.service');
+const { MemoryService } = require('../services/memory/memory.service');
 const { successResponse, errorResponse } = require('../utils/response');
 const {
   createStreamContext,
@@ -14,10 +14,10 @@ const {
   writeRunStarted,
   writeStreamEvent,
 } = require('../utils/sse-events');
-const { upload, parseFile, cleanupFile } = require('../services/file-upload.service');
-const { recordAudit } = require('../services/quality-governance.service');
-const { vectorStore: vectorStoreSingleton } = require('../services/vector-store-qdrant.service');
-const { logEvent } = require('../services/observability.service');
+const { upload, parseFile, cleanupFile } = require('../services/knowledge/file-upload.service');
+const { recordAudit } = require('../services/agent/quality-governance.service');
+const { vectorStore: vectorStoreSingleton } = require('../services/knowledge/vector-store-qdrant.service');
+const { logEvent } = require('../services/observability/observability.service');
 
 const ragService = new RagService(aiService);
 const memoryService = new MemoryService();

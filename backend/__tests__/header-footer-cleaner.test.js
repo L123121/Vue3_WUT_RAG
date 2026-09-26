@@ -6,7 +6,7 @@ const {
   stripRepeatingZoneLines,
   matchRuleLine,
   normalizeForRepeat,
-} = require('../src/services/header-footer-cleaner.service');
+} = require('../src/services/knowledge/header-footer-cleaner.service');
 
 // 5 页文档各自的章节标题（真实文档中每页章节不同，避免数字归一化误并）
 const SECTION_TITLES = ['入学与注册', '学分与选课', '考核与成绩', '转专业与辅修', '毕业与学位'];

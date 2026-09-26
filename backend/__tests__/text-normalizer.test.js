@@ -4,7 +4,7 @@ const {
   normalizeCharacters,
   mergeHardLineBreaks,
   endsWithTerminator,
-} = require('../src/services/text-normalizer.service');
+} = require('../src/services/knowledge/text-normalizer.service');
 const config = require('../src/config');
 
 describe('text-normalizer.service — normalizeCharacters', () => {
@@ -156,7 +156,7 @@ describe('text-normalizer.service — mergeHardLineBreaks', () => {
 
 describe('text-normalizer — 与清洗管线协同', () => {
   it('归一化前置让页眉页脚规则法吃到全角数字（"第３页"→"第3页"）', () => {
-    const { cleanHeaderFooter } = require('../src/services/header-footer-cleaner.service');
+    const { cleanHeaderFooter } = require('../src/services/knowledge/header-footer-cleaner.service');
     const norm = normalizeCharacters('正文内容。\n第３页');
     const { report } = cleanHeaderFooter(norm.content);
     expect(report.removedRuleLines).toBe(1);

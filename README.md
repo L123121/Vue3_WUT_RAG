@@ -362,7 +362,7 @@ RAG 与 Agent 评测脚本位于 `scripts/rag-eval/`，主要数据集位于 `sc
 │   │   ├── controllers/         # Chat 与 RAG 控制器
 │   │   ├── middleware/          # 认证、安全、限流、配额
 │   │   ├── routes/              # Auth、Conversation、RAG、Eval、Share、Memory
-│   │   ├── services/            # Orchestrator、Agent、RAG、模型与存储
+│   │   ├── services/            # 按域分子目录：rag/ llm/ agent/ knowledge/ wiki/ memory/ conversation/ observability/ media/ auth/
 │   │   └── utils/               # HTTP、文本与响应工具
 │   ├── __tests__/               # 后端测试
 │   ├── data/                    # SQLite 数据

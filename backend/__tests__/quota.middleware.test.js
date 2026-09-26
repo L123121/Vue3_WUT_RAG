@@ -41,7 +41,7 @@ describe('quota.middleware', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    quotaService = require('../src/services/quota.service');
+    quotaService = require('../src/services/auth/quota.service');
     quotaMiddleware = getQuotaMiddleware();
   });
 

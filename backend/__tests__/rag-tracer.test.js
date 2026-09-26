@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-const { RagTracer } = require('../src/services/rag-tracer.service');
+const { RagTracer } = require('../src/services/rag/rag-tracer.service');
 
 describe('RagTracer', () => {
   const userId = 'rag_tracer_test_' + Math.random().toString(36).slice(2);

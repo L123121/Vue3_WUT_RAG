@@ -26,7 +26,7 @@ vi.mock('../src/config', () => ({
 }));
 
 // 模拟 rag.service / ai.service，避免真实初始化向量库
-vi.mock('../src/services/rag.service', () => {
+vi.mock('../src/services/rag/rag.service', () => {
   class FakeRagService {
     async chat(query, history, opts) {
       return {
@@ -39,7 +39,7 @@ vi.mock('../src/services/rag.service', () => {
   return { RagService: FakeRagService };
 });
 
-vi.mock('../src/services/ai.service', () => {
+vi.mock('../src/services/llm/ai.service', () => {
   class FakeAiService {
     async getCompletion(message, history, opts) {
       return { content: '模拟 LLM 回答', isMock: true, model: 'mock' };
@@ -64,9 +64,9 @@ beforeEach(() => {
       delete require.cache[k];
     }
   }
-  registryMod = require('../src/services/tool-registry.service');
-  agentTools = require('../src/services/agent-tools');
-  agentMod = require('../src/services/agent.service');
+  registryMod = require('../src/services/agent/tool-registry.service');
+  agentTools = require('../src/services/agent/agent-tools.service');
+  agentMod = require('../src/services/agent/agent.service');
 });
 
 describe('ToolRegistry（移植自存档版）', () => {

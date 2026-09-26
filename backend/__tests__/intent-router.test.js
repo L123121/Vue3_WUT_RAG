@@ -17,13 +17,13 @@ vi.mock('../src/config', () => ({
 }));
 
 let IntentRouter;
-const { INTENT_TYPES } = require('../src/services/intent-router.service');
+const { INTENT_TYPES } = require('../src/services/agent/intent-router.service');
 
 beforeEach(() => {
   for (const k of Object.keys(require.cache)) {
     if (k.includes('intent-router') || k.includes('ai.service')) delete require.cache[k];
   }
-  const mod = require('../src/services/intent-router.service');
+  const mod = require('../src/services/agent/intent-router.service');
   IntentRouter = mod.IntentRouter;
 });
 

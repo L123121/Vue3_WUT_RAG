@@ -1,10 +1,10 @@
 "use strict";
 
-const { redis: store } = require('../memory-store');
-const { EmbeddingService } = require('../embedding.service');
+const { redis: store } = require('./memory-store.service');
+const { EmbeddingService } = require('../knowledge/embedding.service');
 const { parseRedisList } = require('./helpers');
 const config = require('../../config');
-const { logEvent } = require('../observability.service');
+const { logEvent } = require('../observability/observability.service');
 
 const MAX_LONG_TERM = 100;
 const KEYWORD_BOOST = 0.3;

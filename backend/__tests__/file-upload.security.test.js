@@ -21,7 +21,7 @@ const {
   parseFile,
   cleanupFile,
   isAllowedUpload,
-} = require('../src/services/file-upload.service.js');
+} = require('../src/services/knowledge/file-upload.service');
 
 const tmpDirs = [];
 const makeTempDir = () => {

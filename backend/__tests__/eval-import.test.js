@@ -5,8 +5,8 @@ const {
   getEvaluationPayload,
   updateEvaluationScores,
   getEvaluations,
-} = require('../src/services/quality-governance.service');
-const { redis: store } = require('../src/services/memory-store');
+} = require('../src/services/agent/quality-governance.service');
+const { redis: store } = require('../src/services/memory/memory-store.service');
 
 const EVALUATION_KEY = 'quality_governance:evaluations';
 const EVALUATION_PAYLOAD_KEY = 'quality_governance:eval_payloads';

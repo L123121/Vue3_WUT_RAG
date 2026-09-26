@@ -1,7 +1,7 @@
 // config.js
 require('dotenv').config();
 const path = require('path');
-const { logEvent } = require('../services/observability.service');
+const { logEvent } = require('../services/observability/observability.service');
 const aiBaseUrl = process.env.AI_BASE_URL || 'https://api.stepfun.com/v1';
 const jevEnabled = process.env.JEV_DECISION_ENABLED === 'true';
 const jevMode = process.env.JEV_DECISION_MODE || (jevEnabled ? 'shadow' : 'off');

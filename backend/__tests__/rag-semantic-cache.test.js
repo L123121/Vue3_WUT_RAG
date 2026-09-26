@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { SemanticCache } from '../src/services/rag-semantic-cache.service';
+import { SemanticCache } from '../src/services/rag/rag-semantic-cache.service';
 
 // 与被测服务同一 CJS 模块图取 config，保证开关修改对服务可见
 const config = require('../src/config');
-const { bumpCorpusVersion, resetCorpusVersionForTest } = require('../src/services/corpus-version.service');
+const { bumpCorpusVersion, resetCorpusVersionForTest } = require('../src/services/knowledge/corpus-version.service');
 
 function getRetrievalModule() {
-  delete require.cache[require.resolve('../src/services/rag-retrieval.service')];
-  return require('../src/services/rag-retrieval.service');
+  delete require.cache[require.resolve('../src/services/rag/rag-retrieval.service')];
+  return require('../src/services/rag/rag-retrieval.service');
 }
 
 describe('SemanticCache 余弦相似度', () => {

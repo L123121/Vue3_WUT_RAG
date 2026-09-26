@@ -4,7 +4,7 @@ const {
   checkGrounding,
   splitAnswerSentences,
   supportScore,
-} = require('../src/services/grounding.service');
+} = require('../src/services/rag/grounding.service');
 
 describe('grounding.service', () => {
   const CONTEXT = [

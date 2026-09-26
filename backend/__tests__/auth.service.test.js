@@ -28,7 +28,7 @@ require.cache[betterSqlite3Id] = {
   exports: MockDatabase,
 };
 
-const authService = require('../src/services/auth.service.js');
+const authService = require('../src/services/auth/auth.service');
 
 const testDb = () => instances[0];
 

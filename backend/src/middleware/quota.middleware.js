@@ -1,7 +1,7 @@
 "use strict";
 
-const quotaService = require("../services/quota.service");
-const { logEvent } = require('../services/observability.service');
+const quotaService = require("../services/auth/quota.service");
+const { logEvent } = require('../services/observability/observability.service');
 
 /**
  * 用户级配额中间件

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 
 const config = require('../src/config');
-const otel = require('../src/services/otel-tracing.service');
+const otel = require('../src/services/observability/otel-tracing.service');
 
 describe('otel-tracing.service', () => {
   afterEach(async () => {

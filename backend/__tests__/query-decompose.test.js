@@ -5,7 +5,7 @@ const {
   splitComparisonQuery,
   splitEnumerationQuery,
   cleanEntity,
-} = require('../src/services/query-decompose.service');
+} = require('../src/services/rag/query-decompose.service');
 
 describe('query-decompose.service', () => {
   it('对比类问题拆出两个实体', () => {

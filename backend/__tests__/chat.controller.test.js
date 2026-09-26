@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../src/services/conversation-orchestrator.service', () => ({
+vi.mock('../src/services/conversation/conversation-orchestrator.service', () => ({
   ConversationOrchestrator: class ConversationOrchestrator {
     async *chatStream() {}
   },

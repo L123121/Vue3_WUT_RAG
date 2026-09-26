@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-const { createRunEventLog, normalizeEvent, normalizeRunId } = require('../src/services/run-event-log.service');
+const { createRunEventLog, normalizeEvent, normalizeRunId } = require('../src/services/observability/run-event-log.service');
 
 const tempDirectories = [];
 

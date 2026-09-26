@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-const { ConversationOrchestrator } = require('../src/services/conversation-orchestrator.service');
+const { ConversationOrchestrator } = require('../src/services/conversation/conversation-orchestrator.service');
 
 describe('ConversationOrchestrator', () => {
   it('读取持久记忆并作为 system history 注入 chat 链路', async () => {

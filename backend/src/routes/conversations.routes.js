@@ -1,8 +1,8 @@
 const { Router } = require('express');
 
 const { requireAuth } = require('../middleware/auth.middleware');
-const { conversationStore } = require('../services/memory-store');
-const { logEvent } = require('../services/observability.service');
+const { conversationStore } = require('../services/memory/memory-store.service');
+const { logEvent } = require('../services/observability/observability.service');
 
 const router = Router();
 

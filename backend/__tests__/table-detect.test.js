@@ -8,7 +8,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
  *   vi.stubEnv + vi.resetModules + delete require.cache + 动态 import
  *   （vitest 4 中 vi.mock 对 CJS require 链路不生效）
  */
-import { detectTablePages, isTableLikePage, replaceTablePages } from '../src/services/file-upload.service';
+import { detectTablePages, isTableLikePage, replaceTablePages } from '../src/services/knowledge/file-upload.service';
 
 describe('detectTablePages 表格页检测', () => {
   it('无分页符（无法定位页）时返回空数组', () => {

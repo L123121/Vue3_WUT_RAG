@@ -3,9 +3,9 @@
  */
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const authService = require('../services/auth.service');
+const authService = require('../services/auth/auth.service');
 const { COOKIE_NAME, requireAuth, generateToken } = require('../middleware/auth.middleware');
-const { logEvent } = require('../services/observability.service');
+const { logEvent } = require('../services/observability/observability.service');
 
 const router = express.Router();
 

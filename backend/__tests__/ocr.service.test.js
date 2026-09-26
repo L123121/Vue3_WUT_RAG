@@ -16,8 +16,8 @@ async function loadOcrService() {
   // 清掉 CJS require.cache：config 与 ocr.service 均为原生 require 加载，
   // 否则第二次 stub 环境变量后重载仍拿到首次求值时的旧配置
   delete require.cache[require.resolve('../src/config')];
-  delete require.cache[require.resolve('../src/services/ocr.service')];
-  const mod = await import('../src/services/ocr.service');
+  delete require.cache[require.resolve('../src/services/media/ocr.service')];
+  const mod = await import('../src/services/media/ocr.service');
   return mod.OcrService;
 }
 

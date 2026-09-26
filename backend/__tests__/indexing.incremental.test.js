@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 function getIndexingService() {
-  delete require.cache[require.resolve('../src/services/indexing.service')];
-  return require('../src/services/indexing.service').IndexingService;
+  delete require.cache[require.resolve('../src/services/knowledge/indexing.service')];
+  return require('../src/services/knowledge/indexing.service').IndexingService;
 }
 
 /**

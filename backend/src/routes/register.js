@@ -4,15 +4,15 @@
 const express = require('express');
 const path = require('path');
 const config = require('../config');
-const { logEvent } = require('../services/observability.service');
-const { getEmbeddingHealth } = require('../services/embedding.service');
+const { logEvent } = require('../services/observability/observability.service');
+const { getEmbeddingHealth } = require('../services/knowledge/embedding.service');
 
 function applyRoutes(app, chatLimiter) {
   const { router: apiRoutes } = require('./index');
   const { streamHandler } = require('../controllers/chat.controller');
   const { speechHandler } = require('../controllers/audio.controller');
-  const { chatUpload, parseFile } = require('../services/file-upload.service');
-  const { attachmentService } = require('../services/attachment.service');
+  const { chatUpload, parseFile } = require('../services/knowledge/file-upload.service');
+  const { attachmentService } = require('../services/knowledge/attachment.service');
   const { requireAuth } = require('../middleware/auth.middleware');
   const { router: authRoutes } = require('./auth.routes');
   const { router: metricsRoutes } = require('./metrics.routes');

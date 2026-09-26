@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // 与 memory.service.test.js 相同的内存版 memory-store mock
-vi.mock("../src/services/memory-store", () => {
+vi.mock("../src/services/memory/memory-store.service", () => {
   const store = new Map();
   return {
     redis: {

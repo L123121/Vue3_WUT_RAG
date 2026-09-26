@@ -1,7 +1,7 @@
 "use strict";
 
-const { redis: store } = require('../memory-store');
-const { logEvent } = require('../observability.service');
+const { redis: store } = require('./memory-store.service');
+const { logEvent } = require('../observability/observability.service');
 
 class UserProfile {
   async update(userId, profile) {

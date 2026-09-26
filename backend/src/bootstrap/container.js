@@ -1,14 +1,14 @@
 'use strict';
 
-const { AiService } = require('../services/ai.service');
-const { RagService } = require('../services/rag.service');
-const { MemoryService } = require('../services/memory.service');
-const { IntentRouter } = require('../services/intent-router.service');
-const { AgentService } = require('../services/agent.service');
-const { AgenticRagService } = require('../services/agentic-rag.service');
-const { JevDecisionService } = require('../services/jev-decision.service');
-const { ConversationOrchestrator } = require('../services/conversation-orchestrator.service');
-const { audioService } = require('../services/audio.service');
+const { AiService } = require('../services/llm/ai.service');
+const { RagService } = require('../services/rag/rag.service');
+const { MemoryService } = require('../services/memory/memory.service');
+const { IntentRouter } = require('../services/agent/intent-router.service');
+const { AgentService } = require('../services/agent/agent.service');
+const { AgenticRagService } = require('../services/agent/agentic-rag.service');
+const { JevDecisionService } = require('../services/agent/jev-decision.service');
+const { ConversationOrchestrator } = require('../services/conversation/conversation-orchestrator.service');
+const { audioService } = require('../services/media/audio.service');
 
 function createApplicationContainer(overrides = {}) {
   const aiService = overrides.aiService || new AiService();

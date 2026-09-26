@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 
 const { createSpeechHandler } = require('../src/controllers/audio.controller');
-const { operationalMetrics } = require('../src/services/operational-metrics.service');
+const { operationalMetrics } = require('../src/services/observability/operational-metrics.service');
 
 function createResponse() {
   const response = new EventEmitter();

@@ -10,8 +10,8 @@ function loadRagServiceWithEnv(rerankEnv) {
   if (rerankEnv === undefined) delete process.env.RAG_RERANK_ENABLED;
   else process.env.RAG_RERANK_ENABLED = rerankEnv;
   delete require.cache[require.resolve('../src/config')];
-  delete require.cache[require.resolve('../src/services/rag.service')];
-  const { RagService } = require('../src/services/rag.service');
+  delete require.cache[require.resolve('../src/services/rag/rag.service')];
+  const { RagService } = require('../src/services/rag/rag.service');
   return new RagService({ getCompletion: vi.fn() });
 }
 

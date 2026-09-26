@@ -1,8 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const config = require('./config');
-const { operationalMetrics } = require('./services/operational-metrics.service');
-const { initTracing, shutdownTracing } = require('./services/otel-tracing.service');
+const { operationalMetrics } = require('./services/observability/operational-metrics.service');
+const { initTracing, shutdownTracing } = require('./services/observability/otel-tracing.service');
 // 环境变量校验已在 config/index.js 中统一处理，此处不再重复
 
 // OTel traces（OTLP 导出）：OTEL_EXPORTER_OTLP_ENDPOINT 未设置时为 Noop（不加载 SDK）
@@ -17,7 +17,7 @@ const chatLimiter = applyMiddleware(app);
 
 // 路由注册
 const { applyRoutes } = require('./routes/register');
-const { logEvent } = require('./services/observability.service');
+const { logEvent } = require('./services/observability/observability.service');
 applyRoutes(app, chatLimiter);
 
 // 404 处理
@@ -61,8 +61,8 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
   // registerDocumentProvider 永远不触发，向量为空。这里显式初始化一次，
   // 确保启动后向量库就绪。
   try {
-    const { DocumentService } = require('./services/document.service');
-    const { vectorStore } = require('./services/vector-store-qdrant.service');
+    const { DocumentService } = require('./services/knowledge/document.service');
+    const { vectorStore } = require('./services/knowledge/vector-store-qdrant.service');
     const docService = new DocumentService();
     docService.ensureIndexingReady();
     await vectorStore.ensureReady();
@@ -74,9 +74,9 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
 
   // 上传目录定期清理（聊天上传孤儿文件，7 天过期）
   try {
-    const { startUploadsCleanup } = require('./services/file-upload.service');
+    const { startUploadsCleanup } = require('./services/knowledge/file-upload.service');
     startUploadsCleanup();
-    const { startSpillCleanup } = require('./services/context-compaction.service');
+    const { startSpillCleanup } = require('./services/conversation/context-compaction.service');
     startSpillCleanup();
   } catch (err) {
     logEvent('warn', 'upload_dir_cleanup_start_failed', { message: '上传目录清理任务启动失败', error: err.message });
@@ -90,7 +90,7 @@ async function shutdown(signal, exitCode = 0) {
   isShuttingDown = true;
   logEvent('info', 'server_shutdown_signal', { signal });
   operationalMetrics.flush();
-  try { require('./services/context-compaction.service').stopSpillCleanup(); } catch { /* 清理器未启动时忽略 */ }
+  try { require('./services/conversation/context-compaction.service').stopSpillCleanup(); } catch { /* 清理器未启动时忽略 */ }
   await shutdownTracing();
   server.close(() => {
     operationalMetrics.close();

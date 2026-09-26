@@ -7,9 +7,9 @@
  * v1 统一为 RunEvent 信封，避免前端依赖顶层字段形状识别事件。
  */
 
-const { createRunId, createTraceId, sanitizeTraceId } = require("../services/observability.service");
-const { recordRunEvent } = require('../services/run-event-log.service');
-const { operationalMetrics } = require('../services/operational-metrics.service');
+const { createRunId, createTraceId, sanitizeTraceId } = require("../services/observability/observability.service");
+const { recordRunEvent } = require('../services/observability/run-event-log.service');
+const { operationalMetrics } = require('../services/observability/operational-metrics.service');
 
 const RUN_EVENT_VERSION = 1;
 const TERMINAL_RUN_EVENT_TYPES = new Set(["run.completed", "run.failed"]);

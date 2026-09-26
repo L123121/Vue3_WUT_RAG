@@ -28,7 +28,7 @@ const describeE2E = hasEmbeddingCache ? describe : describe.skip;
 
 // ─── Reranker Service Mock ────────────────────────────────────
 // 本地无 bge-reranker-base 模型缓存，用关键词 overlap 模拟 cross-encoder 打分
-vi.mock('../src/services/reranker.service', () => {
+vi.mock('../src/services/knowledge/reranker.service', () => {
   const { QueryCache } = require('../src/utils/query-cache');
   const rerankerScoreCache = new QueryCache(2000, 300000);
 
@@ -233,7 +233,7 @@ function makeFakeQdrantClient(chunks = []) {
 }
 
 async function setupStore(fakeClient) {
-  const { QdrantVectorStore } = loadClass('../src/services/vector-store-qdrant.service');
+  const { QdrantVectorStore } = loadClass('../src/services/knowledge/vector-store-qdrant.service');
   vi.spyOn(QdrantVectorStore.prototype, '_createClient').mockReturnValue(fakeClient);
   const store = new QdrantVectorStore();
   for (let i = 0; i < 200; i++) {
@@ -259,7 +259,7 @@ const SAMPLE_DOCS = [
 ];
 
 function createRagService(vectorStore, docService, rerankerService = null) {
-  const { RagService } = loadClass('../src/services/rag.service');
+  const { RagService } = loadClass('../src/services/rag/rag.service');
   const rag = new RagService();
   rag.vectorStore = vectorStore;
   rag.documentService = docService;
@@ -372,7 +372,7 @@ describeE2E('RAG Pipeline E2E (real ONNX)', () => {
     ];
 
     const store = await setupStore(makeFakeQdrantClient(chunks));
-    const { RagService } = loadClass('../src/services/rag.service');
+    const { RagService } = loadClass('../src/services/rag/rag.service');
     const rag = new RagService();
     rag.vectorStore = store;
     rag.documentService = createDocService([fbDoc]);

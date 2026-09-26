@@ -9,7 +9,7 @@ const mockConversationStore = {
   clearMessages: vi.fn(),
 };
 
-vi.mock('../src/services/memory-store', () => ({
+vi.mock('../src/services/memory/memory-store.service', () => ({
   conversationStore: mockConversationStore,
 }));
 

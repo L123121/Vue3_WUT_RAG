@@ -1,7 +1,7 @@
 "use strict";
 
 const { applicationContainer } = require("../bootstrap/container");
-const { operationalMetrics } = require("../services/operational-metrics.service");
+const { operationalMetrics } = require("../services/observability/operational-metrics.service");
 
 const createSpeechHandler = (
   service = applicationContainer.audioService,

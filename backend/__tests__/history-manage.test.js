@@ -7,8 +7,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  */
 function getAiService() {
   delete require.cache[require.resolve('../src/config')];
-  delete require.cache[require.resolve('../src/services/ai.service')];
-  return require('../src/services/ai.service').AiService;
+  delete require.cache[require.resolve('../src/services/llm/ai.service')];
+  return require('../src/services/llm/ai.service').AiService;
 }
 
 const mkHistory = (count, perLen = 80) =>

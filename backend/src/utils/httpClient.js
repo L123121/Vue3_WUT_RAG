@@ -2,7 +2,7 @@
 
 const https = require('https');
 const { StringDecoder } = require('string_decoder');
-const { metrics } = require('../services/metrics.service');
+const { metrics } = require('../services/observability/metrics.service');
 
 // ==================== 共享 HTTPS 客户端 ====================
 // 提供连接池（keep-alive）、重试、超时统一处理

@@ -13,7 +13,7 @@ vi.mock('../src/config', () => ({
   },
 }));
 
-const { AiService } = require('../src/services/ai.service');
+const { AiService } = require('../src/services/llm/ai.service');
 
 // 用 Object.create 拿到原型方法，避免构造器副作用（judgeService 等）
 function makeService() {
@@ -123,7 +123,7 @@ describe('AiService._parseStream 原生 function calling', () => {
 
 describe('RequestQueue 背压与取消', () => {
   it('排队中的请求可被 AbortSignal 移除，不占用 pending', async () => {
-    const { RequestQueue } = require('../src/services/ai.service');
+    const { RequestQueue } = require('../src/services/llm/ai.service');
     const queue = new RequestQueue(1, { maxPending: 2, waitTimeoutMs: 1000 });
     const release = await queue.acquire();
     const controller = new AbortController();
@@ -138,7 +138,7 @@ describe('RequestQueue 背压与取消', () => {
   });
 
   it('超过等待上限返回可重试的 503 错误', async () => {
-    const { RequestQueue } = require('../src/services/ai.service');
+    const { RequestQueue } = require('../src/services/llm/ai.service');
     const queue = new RequestQueue(1, { maxPending: 1, waitTimeoutMs: 1000 });
     const release = await queue.acquire();
     const waiting = queue.acquire();
@@ -154,7 +154,7 @@ describe('RequestQueue 背压与取消', () => {
   });
 
   it('排队超时后释放 waiter，不留下悬挂队列', async () => {
-    const { RequestQueue } = require('../src/services/ai.service');
+    const { RequestQueue } = require('../src/services/llm/ai.service');
     const queue = new RequestQueue(1, { maxPending: 1, waitTimeoutMs: 10 });
     const release = await queue.acquire();
 

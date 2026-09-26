@@ -1,22 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../src/services/rag.service', () => ({
+vi.mock('../src/services/rag/rag.service', () => ({
   RagService: class RagService {},
 }));
 
-vi.mock('../src/services/ai.service', () => ({
+vi.mock('../src/services/llm/ai.service', () => ({
   aiService: {},
 }));
 
-vi.mock('../src/services/document.service', () => ({
+vi.mock('../src/services/knowledge/document.service', () => ({
   DocumentService: class DocumentService {},
 }));
 
-vi.mock('../src/services/memory-store', () => ({
+vi.mock('../src/services/memory/memory-store.service', () => ({
   redis: {},
 }));
 
-vi.mock('../src/services/memory.service', () => ({
+vi.mock('../src/services/memory/memory.service', () => ({
   MemoryService: class MemoryService {
     saveChatMemory() {}
   },
@@ -27,7 +27,7 @@ vi.mock('../src/utils/response', () => ({
   errorResponse: vi.fn(),
 }));
 
-vi.mock('../src/services/file-upload.service', () => ({
+vi.mock('../src/services/knowledge/file-upload.service', () => ({
   upload: { single: vi.fn(() => vi.fn()) },
   parseFile: vi.fn(),
   cleanupFile: vi.fn(),
@@ -73,9 +73,9 @@ describe('rag.controller updateFeedbackEvalStatus', () => {
   // 因此这里直接用真实 SQLite 存储跑集成断言，避免 mock 实例身份不一致
   function getHandlerAndStore() {
     delete require.cache[require.resolve('../src/controllers/rag.controller')];
-    delete require.cache[require.resolve('../src/services/memory-store')];
+    delete require.cache[require.resolve('../src/services/memory/memory-store.service')];
     const handler = require('../src/controllers/rag.controller').updateFeedbackEvalStatus;
-    const store = require('../src/services/memory-store').redis;
+    const store = require('../src/services/memory/memory-store.service').redis;
     return { handler, store };
   }
 
@@ -145,10 +145,10 @@ describe('rag.controller listFeedback（真实 SQLite 回归）', () => {
   // 该接口此前无测试覆盖，用真实存储走一遍完整链路防回归。
   function getListHandler() {
     delete require.cache[require.resolve('../src/controllers/rag.controller')];
-    delete require.cache[require.resolve('../src/services/memory-store')];
+    delete require.cache[require.resolve('../src/services/memory/memory-store.service')];
     return {
       handler: require('../src/controllers/rag.controller').listFeedback,
-      store: require('../src/services/memory-store').redis,
+      store: require('../src/services/memory/memory-store.service').redis,
     };
   }
 

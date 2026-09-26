@@ -5,7 +5,7 @@ const {
   shouldDoubleJudge,
   computeJudgeAgreement,
   averageJudgeResults,
-} = require('../src/services/judge-agreement.service');
+} = require('../src/services/agent/judge-agreement.service');
 
 const metrics = (faithfulness, answerRelevancy, contextPrecision, contextRecall) => ({
   faithfulness,

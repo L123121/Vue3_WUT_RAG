@@ -29,8 +29,8 @@ function makeFakeClient() {
 
 function getQdrantStore() {
   delete require.cache[require.resolve('../src/config')];
-  delete require.cache[require.resolve('../src/services/vector-store-qdrant.service')];
-  return require('../src/services/vector-store-qdrant.service').QdrantVectorStore;
+  delete require.cache[require.resolve('../src/services/knowledge/vector-store-qdrant.service')];
+  return require('../src/services/knowledge/vector-store-qdrant.service').QdrantVectorStore;
 }
 
 /** 等待构造函数里的异步 _connect 完成 */

@@ -1,8 +1,8 @@
 "use strict";
 
-const { WikiService } = require('../services/wiki.service');
+const { WikiService } = require('../services/wiki/wiki.service');
 const { successResponse, errorResponse } = require('../utils/response');
-const { logEvent } = require('../services/observability.service');
+const { logEvent } = require('../services/observability/observability.service');
 
 const wikiService = new WikiService();
 

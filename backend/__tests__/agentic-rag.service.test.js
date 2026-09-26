@@ -10,7 +10,7 @@ vi.mock('../src/config', () => ({
   },
 }));
 
-const { AgenticRagService } = require('../src/services/agentic-rag.service');
+const { AgenticRagService } = require('../src/services/agent/agentic-rag.service');
 
 async function collect(stream) {
   const events = [];

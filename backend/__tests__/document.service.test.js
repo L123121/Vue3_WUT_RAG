@@ -36,8 +36,8 @@ function createStore() {
 }
 
 function getDocumentService() {
-  delete require.cache[require.resolve('../src/services/document.service')];
-  return require('../src/services/document.service');
+  delete require.cache[require.resolve('../src/services/knowledge/document.service')];
+  return require('../src/services/knowledge/document.service');
 }
 
 describe('DocumentService', () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-const { createAttachmentService } = require('../src/services/attachment.service');
+const { createAttachmentService } = require('../src/services/knowledge/attachment.service');
 
 const createStore = () => {
   const hashes = new Map();

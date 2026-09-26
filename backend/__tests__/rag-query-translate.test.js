@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 
-const { generateHydeDocument, generateStepBackQuery } = require("../src/services/rag-query-rewrite.service");
+const { generateHydeDocument, generateStepBackQuery } = require("../src/services/rag/rag-query-rewrite.service");
 
 function mockAi(content) {
   return {

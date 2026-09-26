@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-const { MetricsService } = require('../src/services/metrics.service');
+const { MetricsService } = require('../src/services/observability/metrics.service');
 
 describe('metrics.service dashboard summary', () => {
   it('聚合引用覆盖率与最近一次 RAG 评测结果', () => {

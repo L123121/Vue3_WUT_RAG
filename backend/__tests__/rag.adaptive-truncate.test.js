@@ -5,8 +5,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * 断崖检测 / 动态低分过滤 / 硬上限 / 单结果放宽 四条规则。
  */
 function getRagService() {
-  delete require.cache[require.resolve('../src/services/rag.service')];
-  return require('../src/services/rag.service').RagService;
+  delete require.cache[require.resolve('../src/services/rag/rag.service')];
+  return require('../src/services/rag/rag.service').RagService;
 }
 
 // 构造带 _rerankScore 的候选

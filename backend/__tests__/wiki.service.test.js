@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../src/services/memory-store', () => ({ redis: {} }));
+vi.mock('../src/services/memory/memory-store.service', () => ({ redis: {} }));
 
 function createHashStore() {
   const hashes = new Map();
@@ -60,8 +60,8 @@ let wiki;
 const noopAiService = { getCompletion: vi.fn(async () => ({ isMock: true })) };
 
 function useWiki({ aiService: aiServiceOverride, docs } = {}) {
-  delete require.cache[require.resolve('../src/services/wiki.service')];
-  const { WikiService } = require('../src/services/wiki.service');
+  delete require.cache[require.resolve('../src/services/wiki/wiki.service')];
+  const { WikiService } = require('../src/services/wiki/wiki.service');
   const scopedDocumentService = docs ? createDocumentService(docs) : documentService;
   return new WikiService({ store, documentService: scopedDocumentService, aiService: aiServiceOverride || noopAiService });
 }

@@ -12,8 +12,8 @@
 const { Router } = require('express');
 const crypto = require('crypto');
 const { requireAuth } = require('../middleware/auth.middleware');
-const { redis: store } = require('../services/memory-store');
-const { logEvent } = require('../services/observability.service');
+const { redis: store } = require('../services/memory/memory-store.service');
+const { logEvent } = require('../services/observability/observability.service');
 
 const router = Router();
 const SNAPSHOT_KEY = 'share:snapshots';

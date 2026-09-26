@@ -1,7 +1,7 @@
 "use strict";
 
 const { applicationContainer } = require("../bootstrap/container");
-const { recordAudit } = require("../services/quality-governance.service");
+const { recordAudit } = require("../services/agent/quality-governance.service");
 const {
   createStreamContext,
   writeRunCompleted,
@@ -10,7 +10,7 @@ const {
   writeSse,
   writeStreamEvent,
 } = require("../utils/sse-events");
-const { logEvent } = require("../services/observability.service");
+const { logEvent } = require("../services/observability/observability.service");
 
 function createChatHandlers(conversationOrchestrator) {
   const streamHandler = async (req, res, next) => {

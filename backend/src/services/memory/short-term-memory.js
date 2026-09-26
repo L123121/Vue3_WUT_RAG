@@ -1,8 +1,8 @@
 "use strict";
 
-const { redis: store } = require("../memory-store");
+const { redis: store } = require("./memory-store.service");
 const { parseRedisList } = require("./helpers");
-const { logEvent } = require('../observability.service');
+const { logEvent } = require('../observability/observability.service');
 
 const MAX_SHORT_TERM = 8;
 const COMPRESS_THRESHOLD = 6;

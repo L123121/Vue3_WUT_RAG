@@ -7,9 +7,9 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
-const { createTraceId, logEvent, sanitizeTraceId } = require('../services/observability.service');
-const { operationalMetrics } = require('../services/operational-metrics.service');
-const { withHttpRootSpan } = require('../services/otel-tracing.service');
+const { createTraceId, logEvent, sanitizeTraceId } = require('../services/observability/observability.service');
+const { operationalMetrics } = require('../services/observability/operational-metrics.service');
+const { withHttpRootSpan } = require('../services/observability/otel-tracing.service');
 
 function applyMiddleware(app) {
   const isProduction = process.env.NODE_ENV === 'production';

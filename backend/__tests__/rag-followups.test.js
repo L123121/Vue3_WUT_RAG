@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 
 function getFollowups() {
-  delete require.cache[require.resolve('../src/services/rag-followups.service')];
-  return require('../src/services/rag-followups.service').buildFollowups;
+  delete require.cache[require.resolve('../src/services/rag/rag-followups.service')];
+  return require('../src/services/rag/rag-followups.service').buildFollowups;
 }
 
 describe('rag-followups 追问建议生成（零 LLM 成本）', () => {

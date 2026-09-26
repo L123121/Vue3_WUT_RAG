@@ -4,7 +4,7 @@ const {
   JevDecisionError,
   JevDecisionService,
   normalizeHistory,
-} = require('../src/services/jev-decision.service');
+} = require('../src/services/agent/jev-decision.service');
 
 const response = (payload, status = 200) => ({
   ok: status >= 200 && status < 300,

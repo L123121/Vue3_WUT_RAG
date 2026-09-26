@@ -7,8 +7,8 @@ function getEmbeddingService() {
 /** 取整个模块（含 SparseStats / setSparseStats），保证与服务实例是同一个模块闭包 */
 function getEmbeddingModule() {
   delete require.cache[require.resolve('../src/config')];
-  delete require.cache[require.resolve('../src/services/embedding.service')];
-  return require('../src/services/embedding.service');
+  delete require.cache[require.resolve('../src/services/knowledge/embedding.service')];
+  return require('../src/services/knowledge/embedding.service');
 }
 
 describe('EmbeddingService', () => {

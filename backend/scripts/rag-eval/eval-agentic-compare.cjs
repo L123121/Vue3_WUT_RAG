@@ -38,9 +38,9 @@ const DATASET_PATH = path.resolve(__dirname, '../../../scripts/rag-eval/dataset'
 const SNAPSHOT_PATH = path.join(RESULTS_DIR, 'agentic-compare-snapshot.json');
 
 // ─── 加载服务 ─────────────────────────────────────────────────
-const { RagService } = require('../../src/services/rag.service');
-const { AgenticRagService } = require('../../src/services/agentic-rag.service');
-const { aiService } = require('../../src/services/ai.service');
+const { RagService } = require('../../src/services/rag/rag.service');
+const { AgenticRagService } = require('../../src/services/agent/agentic-rag.service');
+const { aiService } = require('../../src/services/llm/ai.service');
 const { request } = require('../../src/utils/httpClient');
 const config = require('../../src/config');
 

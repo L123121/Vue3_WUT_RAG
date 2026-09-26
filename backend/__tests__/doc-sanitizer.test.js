@@ -4,7 +4,7 @@ const {
   sanitizeDocument,
   matchInjectionLine,
   garbageRatio,
-} = require('../src/services/doc-sanitizer.service');
+} = require('../src/services/knowledge/doc-sanitizer.service');
 
 describe('doc-sanitizer.service', () => {
   it('命中"忽略以上指令"类注入行', () => {

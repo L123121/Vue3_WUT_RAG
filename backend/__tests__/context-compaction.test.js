@@ -9,7 +9,7 @@ const {
   readToolSpill,
   compactHistoricalToolResults,
   SPILL_EXCERPT_CHARS,
-} = require("../src/services/context-compaction.service");
+} = require("../src/services/conversation/context-compaction.service");
 
 describe("ContextCompactionService", () => {
   let tmpDir;

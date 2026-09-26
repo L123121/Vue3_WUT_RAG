@@ -5,8 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * forkConversation = getConversation → 截取消息 → createConversation → saveConversation
  */
 function getStore() {
-  delete require.cache[require.resolve('../src/services/memory-store')];
-  return require('../src/services/memory-store').conversationStore;
+  delete require.cache[require.resolve('../src/services/memory/memory-store.service')];
+  return require('../src/services/memory/memory-store.service').conversationStore;
 }
 
 describe('ConversationStore.forkConversation（真实 SQLite）', () => {

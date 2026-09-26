@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // 模拟 memory-store
-vi.mock("../src/services/memory-store", () => {
+vi.mock("../src/services/memory/memory-store.service", () => {
   const store = new Map();
   const sets = new Map();
   return {
@@ -70,7 +70,7 @@ describe("MemoryService", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     vi.resetModules();
-    MemoryService = require("../src/services/memory.service").MemoryService;
+    MemoryService = require("../src/services/memory/memory.service").MemoryService;
   });
 
   describe("短期记忆", () => {

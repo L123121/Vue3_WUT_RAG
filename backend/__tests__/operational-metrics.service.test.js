@@ -3,8 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { createOperationalMetrics } = require('../src/services/operational-metrics.service');
-const { OperationalMetricsPersistence } = require('../src/services/operational-metrics-persistence.service');
+const { createOperationalMetrics } = require('../src/services/observability/operational-metrics.service');
+const { OperationalMetricsPersistence } = require('../src/services/observability/operational-metrics-persistence.service');
 
 const originalTtsCost = process.env.TTS_COST_CNY_PER_10K_CHARS;
 
