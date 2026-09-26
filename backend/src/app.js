@@ -53,20 +53,18 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
     aiModel: config.ai.model || 'step-3.7-flash',
     mode: hasApi ? 'online' : 'mock',
     storage: 'SQLite（store.db，WAL）',
-    vector: '本地文件持久化（精确检索）',
+    vector: `Qdrant（${config.vectorStore.qdrantUrl}）`,
   });
 
   // 启动时初始化向量库：注册 documentProvider + 重建索引
-  // 修复延迟初始化 bug：DocumentService.indexingService 是懒加载，
-  // 如果没人调用索引方法，registerDocumentProvider 永远不触发，向量为空。
-  // 这里主动触发一次，确保启动后向量库就绪。
+  // DocumentService.indexingService 是懒加载，如果没人调用索引方法，
+  // registerDocumentProvider 永远不触发，向量为空。这里显式初始化一次，
+  // 确保启动后向量库就绪。
   try {
     const { DocumentService } = require('./services/document.service');
     const { vectorStore } = require('./services/vector-store-qdrant.service');
     const docService = new DocumentService();
-    // 触发 indexingService getter → 注册 provider
-    // 然后 ensureReady 会从文档库重建向量
-    docService.indexingService; // 触发 provider 注册
+    docService.ensureIndexingReady();
     await vectorStore.ensureReady();
     const vectorCount = await vectorStore.count();
     logEvent('info', 'vector_store_init_done', { vectorCount });
@@ -85,18 +83,12 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
   }
 });
 
-// 优雅关闭：先停向量库保存，再关 server
+// 优雅关闭：向量数据由 Qdrant 服务端自持久化，这里只需停本进程资源
 let isShuttingDown = false;
 async function shutdown(signal, exitCode = 0) {
   if (isShuttingDown) return;
   isShuttingDown = true;
   logEvent('info', 'server_shutdown_signal', { signal });
-  try {
-    const { vectorStore } = require('./services/vector-store-qdrant.service');
-    vectorStore.flush();
-  } catch (error) {
-    logEvent('warn', 'vector_store_persist_failed', { message: '向量数据落盘失败', error: error.message });
-  }
   operationalMetrics.flush();
   try { require('./services/context-compaction.service').stopSpillCleanup(); } catch { /* 清理器未启动时忽略 */ }
   await shutdownTracing();

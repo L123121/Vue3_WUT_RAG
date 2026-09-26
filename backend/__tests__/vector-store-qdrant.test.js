@@ -237,12 +237,10 @@ describe('QdrantVectorStore', () => {
     expect(store._ready).toBe(true);
   });
 
-  it('count 反映 collection 点数，flush 为优雅关闭的 no-op', async () => {
+  it('count 反映 collection 点数', async () => {
     expect(await store.count()).toBe(0);
     await fakeClient.upsert('wuli_elf_chunks', { points: [{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }] });
     expect(await store.count()).toBe(3);
-    expect(typeof store.flush).toBe('function'); // Qdrant 服务端持久化，关闭时无需落盘
-    store.flush();
   });
 
   // ==================== payload 索引 + 量化 ====================

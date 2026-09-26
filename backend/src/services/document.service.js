@@ -38,16 +38,25 @@ class DocumentService {
 
   // 延迟获取 IndexingService（首次用时才 require）
   get indexingService() {
+    this.ensureIndexingReady();
+    return this._indexing;
+  }
+
+  /**
+   * 显式初始化索引服务并向向量库注册文档 provider。
+   * 启动流程（app.js）调用，避免依赖"访问 getter 产生副作用"的隐式行为。
+   */
+  ensureIndexingReady() {
     if (!this._indexing) {
       const { IndexingService } = require('./indexing.service');
       // 传入全局向量库单例，保证索引写入同一个实例
       const { vectorStore } = require('./vector-store-qdrant.service');
       this._indexing = new IndexingService(vectorStore);
-      if (!this._providerRegistered) {
-        const { registerDocumentProvider } = require('./vector-store-qdrant.service');
-        registerDocumentProvider(() => this._allDocs());
-        this._providerRegistered = true;
-      }
+    }
+    if (!this._providerRegistered) {
+      const { registerDocumentProvider } = require('./vector-store-qdrant.service');
+      registerDocumentProvider(() => this._allDocs());
+      this._providerRegistered = true;
     }
     return this._indexing;
   }

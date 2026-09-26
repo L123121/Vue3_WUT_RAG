@@ -14,7 +14,7 @@ const UPSERT_MAX_RETRY = 3;
  * QdrantVectorStore — Qdrant 独立服务向量库（单例，唯一实现）
  *
  * 外部接口：
- *   addChunks / search / deleteByDocId / resetCollection / count / isAvailable / ensureReady / setDocumentProvider / flush
+ *   addChunks / search / deleteByDocId / resetCollection / count / isAvailable / ensureReady / setDocumentProvider
  *
  * 设计：
  *   - collection 命名向量：dense(512d, Cosine) + sparse(idf modifier)
@@ -459,9 +459,6 @@ class QdrantVectorStore {
   async isAvailable() {
     return !!this._client;
   }
-
-  /** 优雅关闭统一接口 —— Qdrant 服务端自行持久化，无需落盘 */
-  flush() {}
 
   // ==================== 工具 ====================
 
