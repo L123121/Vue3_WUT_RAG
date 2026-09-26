@@ -36,6 +36,10 @@ class ConversationOrchestrator {
       }
 
       mode = this.decisionModel?.mode || this.decisionModel?.getMode?.() || "off";
+      // 扶正默认开启后，未配置 JEV_API_KEY 的部署 enabled=false，静默直落基线路由（避免逐条告警）
+      if (mode !== "off" && this.decisionModel?.enabled === false) {
+        return await this.intentRouter.route(message);
+      }
       const shouldEvaluate = this.decisionModel?.shouldEvaluate?.({
         runId: context.runId,
         traceId: context.traceId,

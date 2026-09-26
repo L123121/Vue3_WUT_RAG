@@ -278,6 +278,9 @@ RAG 与 Agent 评测脚本位于 `scripts/rag-eval/`，主要数据集位于 `sc
 | `AGENT_MAX_TOOL_ROUNDS` | `2` | 最大工具调度轮数 |
 | `AGENT_DECIDE_TIMEOUT_MS` | `15000` | Agent 决策超时 |
 | `AGENT_TOOL_TIMEOUT_MS` | `15000` | Agent 工具执行总超时 |
+| `AGENTIC_RAG_ENABLED` | `true` | 受控 Agentic RAG（检索-重写循环）；失败自动回落纯 RAG，`false` 一键回退 |
+| `JEV_DECISION_ENABLED` | `true` | Jev System One 决策路由总开关 |
+| `JEV_DECISION_MODE` | `enforce` | `enforce` 决策覆盖路由 / `canary` 按比例放量 / `shadow` 只记录分歧 / `off` 关闭；未配置 `JEV_API_KEY` 时自动空转回退基线路由 |
 
 ### RAG 与模型
 

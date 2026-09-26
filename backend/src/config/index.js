@@ -3,8 +3,8 @@ require('dotenv').config();
 const path = require('path');
 const { logEvent } = require('../services/observability/observability.service');
 const aiBaseUrl = process.env.AI_BASE_URL || 'https://api.stepfun.com/v1';
-const jevEnabled = process.env.JEV_DECISION_ENABLED === 'true';
-const jevMode = process.env.JEV_DECISION_MODE || (jevEnabled ? 'shadow' : 'off');
+const jevEnabled = process.env.JEV_DECISION_ENABLED !== 'false';
+const jevMode = process.env.JEV_DECISION_MODE || (jevEnabled ? 'enforce' : 'off');
 const jevRolloutEnv = Number.parseFloat(process.env.JEV_DECISION_ROLLOUT_PERCENT);
 const jevMaxRetriesEnv = Number.parseInt(process.env.JEV_DECISION_MAX_RETRIES, 10);
 
@@ -220,7 +220,8 @@ module.exports = {
     wikiFirstHybridEnabled: process.env.RAG_WIKI_HYBRID_ENABLED !== 'false',
     wikiFirstMaxEntries: Math.min(Math.max(parseInt(process.env.RAG_WIKI_FIRST_MAX_ENTRIES, 10) || 3, 1), 10),
   },
-  // Jev System One 决策层：默认 off；shadow 只记录分歧，canary/enforce 才可改变主路由
+  // Jev System One 决策层：默认 enforce（已扶正）；未配置 JEV_API_KEY 时编排层静默回退基线路由。
+  // shadow 只记录分歧，canary 按百分比放量，off 关闭
   jev: {
     enabled: jevEnabled,
     mode: jevMode,
@@ -279,9 +280,9 @@ module.exports = {
     // 语义去重阈值：同类型记忆 cosine 相似度 ≥ 该值视为重复，执行合并（而非新增）
     dedupSimilarity: Number.parseFloat(process.env.MEMORY_DEDUP_SIMILARITY || '0.9'),
   },
-  // 受控 Agentic RAG：默认关闭，灰度开启后仅替换知识库问答链路
+  // 受控 Agentic RAG（已扶正）：默认启用，检索-重写循环失败自动回落纯 RAG；AGENTIC_RAG_ENABLED=false 一键回退
   agenticRag: {
-    enabled: process.env.AGENTIC_RAG_ENABLED === 'true',
+    enabled: process.env.AGENTIC_RAG_ENABLED !== 'false',
     // 最多 3 轮，避免检索循环失控
     maxRounds: Math.min(Math.max(parseInt(process.env.AGENTIC_RAG_MAX_ROUNDS, 10) || 2, 1), 3),
     maxDurationMs: parseInt(process.env.AGENTIC_RAG_MAX_DURATION_MS, 10) || 20000,
