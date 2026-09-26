@@ -3,8 +3,7 @@
     "question": "武汉理工大学有几个校区？分别叫什么？",
     "expected_answer": "三个校区：马房山、余家头、南湖。",
     "relevant_doc_ids": [
-      "doc_a69b98e5119f694cb5cd5c73a1c56393",
-      "doc_4b956c30b8728c57c226d0b91276c731"
+      "doc_a69b98e5119f694cb5cd5c73a1c56393"
     ],
     "category": "学校概况"
   },

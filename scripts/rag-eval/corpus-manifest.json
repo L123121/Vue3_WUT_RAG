@@ -131,13 +131,6 @@
       "chunkCount": 130
     },
     {
-      "title": "campus",
-      "category": "学校概况",
-      "docId": "doc_4b956c30b8728c57c226d0b91276c731",
-      "legacyId": "doc_4dcd7c94-8c2f-4fdc-ae18-3669c59dfd36",
-      "chunkCount": 12
-    },
-    {
       "title": "武汉理工大学交通出行指南",
       "category": "学校概况",
       "docId": "doc_da88e7f3edfd9d4942b9277ae25d9e0b",
@@ -183,7 +176,7 @@
       "title": "武汉理工大学校园资料手册",
       "category": "学校概况",
       "docId": "doc_a69b98e5119f694cb5cd5c73a1c56393",
-      "legacyId": "doc_9a78cba7-14c0-435e-8823-d79f9ea9572c",
+      "legacyId": ["doc_9a78cba7-14c0-435e-8823-d79f9ea9572c", "doc_4dcd7c94-8c2f-4fdc-ae18-3669c59dfd36"],
       "chunkCount": 12
     },
     {
