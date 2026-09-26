@@ -155,16 +155,16 @@ docId 由 `backend/src/utils/doc-id.js` 从 **(标题, 类别)** 确定性派生
 | `GET` | `/api/conversations` | 会话列表与持久化接口 |
 | `GET` | `/api/rag/documents` | 查看知识库文档 |
 | `POST` | `/api/rag/documents/upload` | 管理员上传知识库文档 |
-| `POST` | `/api/rag/documents/reindex` | 管理员重建索引；`mode=incremental` 走内容 hash 增量 diff，未变段落复用向量，任务互斥 |
+| `POST` | `/api/rag/documents/reindex` | 运维手动调用（前端不使用）。管理员重建索引；`mode=incremental` 走内容 hash 增量 diff，未变段落复用向量，任务互斥 |
 | `GET` | `/api/wiki/entries` | 百科词条列表（默认仅已上架；`q` 匹配标题/分类/正文，`includeHidden` 仅管理员） |
 | `GET` | `/api/wiki/entries/:idOrSlug` | 百科词条正文，服务端已完成 front-matter 解析、来源修订与漂移标注 |
 | `GET` | `/api/wiki/entries/:docId/revisions` | 管理员查看词条来源修订历史 |
 | `PUT` | `/api/wiki/entries/:docId/visibility` | 管理员上下架；演示用模拟语料默认返回 409 拒绝上架 |
+| `POST` | `/api/wiki/entries/:docId/relations/recompile` | 运维手动调用（前端不使用）。管理员显式重算词条编译期互链 |
 | `POST` | `/api/share` | 创建分享快照 |
 | `GET` | `/api/share/:code` | 公开读取分享快照 |
 | `GET` | `/api/metrics/runs/:runId/events` | 管理员读取已开启的 RunEvent JSONL 回放 |
 | `POST` | `/api/metrics/client-performance` | 登录用户低频上报 Markdown Worker 汇总性能 |
-| `POST` | `/api/rag/documents/reindex` | 管理员重建索引；`mode=incremental` 走内容 hash 增量 diff，任务互斥 |
 | `GET` | `/api/memory` | 当前未注册公开路由；记忆由会话编排层内部使用 |
 
 ## 快速开始
