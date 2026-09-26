@@ -56,7 +56,10 @@ describe('run-event-log.service', () => {
     expect(events.map((event) => event.seq)).toEqual([1, 2]);
     expect(events[1].data).toEqual({ content: '回答片段', nested: { keep: true } });
     expect(await log.read('invalid')).toEqual([]);
-    expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
+    // Windows/NTFS 不支持 POSIX 权限位（writeFileSync 的 mode 被忽略，恒为 0o666），仅在 POSIX 上断言
+    if (process.platform !== 'win32') {
+      expect(fs.statSync(filePath).mode & 0o777).toBe(0o600);
+    }
   });
 
   it('默认不持久化 message.delta 正文，只保留回放诊断元数据', async () => {
