@@ -181,6 +181,17 @@ class SQLiteStore {
   }
 
   /**
+   * 枚举 hash 表中匹配 LIKE 模式的 key（如 'conversations:%'）。
+   * 供留存清理等后台任务按前缀扫描，不接受用户输入。
+   */
+  hashKeys(pattern) {
+    return this._db
+      .prepare('SELECT DISTINCT key FROM hash WHERE key LIKE ?')
+      .all(pattern)
+      .map((r) => r.key);
+  }
+
+  /**
    * 同步读取整个 hash（供需要原子读-改-写的场景）。
    * better-sqlite3 为同步 API，在 Node 单线程内调用时不会让出执行权，
    * 配合 hsetSync 可实现无竞态的计数操作。

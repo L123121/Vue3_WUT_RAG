@@ -163,6 +163,15 @@ module.exports = {
     runEventLogMaxRuns: parseInt(process.env.RUN_EVENT_LOG_MAX_RUNS, 10) || 500,
     runEventLogMaxEventsPerRun: parseInt(process.env.RUN_EVENT_LOG_MAX_EVENTS_PER_RUN, 10) || 1000,
   },
+  // 隐私留存：到期数据由后台任务定期清理（隐私留存 sweeper）。0 = 该类数据不限期留存。
+  // 会话与分享快照属用户内容，默认 0（不自动删除）以免破坏用户预期，站点有合规要求时显式开启；
+  // RunEvent 回放日志属运维诊断数据，默认 30 天到期清理。
+  privacy: {
+    runEventLogRetentionDays: parseInt(process.env.RUN_EVENT_LOG_RETENTION_DAYS, 10) || 30,
+    shareSnapshotRetentionDays: parseInt(process.env.SHARE_SNAPSHOT_RETENTION_DAYS, 10) || 0,
+    conversationRetentionDays: parseInt(process.env.CONVERSATION_RETENTION_DAYS, 10) || 0,
+    sweepIntervalMs: parseInt(process.env.PRIVACY_SWEEP_INTERVAL_MS, 10) || 24 * 60 * 60 * 1000,
+  },
   // 文档内容去重（sha256 归一化哈希）：重复上传直接返回已有文档，不再产生重复向量
   document: {
     dedupEnabled: process.env.DOC_DEDUP_ENABLED !== 'false',

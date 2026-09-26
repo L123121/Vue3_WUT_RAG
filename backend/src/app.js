@@ -78,6 +78,9 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
     startUploadsCleanup();
     const { startSpillCleanup } = require('./services/conversation/context-compaction.service');
     startSpillCleanup();
+    // 隐私留存清理：按 config.privacy 的留存天数定期清除到期日志/快照/会话
+    const { startRetentionSweeper } = require('./services/privacy/retention.service');
+    startRetentionSweeper();
   } catch (err) {
     logEvent('warn', 'upload_dir_cleanup_start_failed', { message: '上传目录清理任务启动失败', error: err.message });
   }
@@ -91,6 +94,7 @@ async function shutdown(signal, exitCode = 0) {
   logEvent('info', 'server_shutdown_signal', { signal });
   operationalMetrics.flush();
   try { require('./services/conversation/context-compaction.service').stopSpillCleanup(); } catch { /* 清理器未启动时忽略 */ }
+  try { require('./services/privacy/retention.service').stopRetentionSweeper(); } catch { /* 清理器未启动时忽略 */ }
   await shutdownTracing();
   server.close(() => {
     operationalMetrics.close();

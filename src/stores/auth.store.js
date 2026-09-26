@@ -88,7 +88,7 @@ export const useAuthStore = defineStore('auth', () => {
     return nextUser;
   };
 
-  const register = async (username, password) => {
+  const register = async (username, password, inviteCode) => {
     const uname = String(username || '').trim();
     const pwd = String(password || '');
 
@@ -96,7 +96,12 @@ export const useAuthStore = defineStore('auth', () => {
       throw createAuthError({ code: 'MISSING_CREDENTIALS', message: '请输入用户名和密码', status: 400 });
     }
 
-    const data = await postAuth('/auth/register', { username: uname, password: pwd }, 30000);
+    // 站点配置 AUTH_INVITE_CODE 时后端强制校验；未配置时后端忽略该字段
+    const data = await postAuth('/auth/register', {
+      username: uname,
+      password: pwd,
+      ...(inviteCode ? { inviteCode: String(inviteCode).trim() } : {}),
+    }, 30000);
     const loggedInUser = data?.data?.user;
     if (!loggedInUser) {
       throw createAuthError({ code: 'INVALID_RESPONSE', message: '注册成功但未获取到用户信息' });

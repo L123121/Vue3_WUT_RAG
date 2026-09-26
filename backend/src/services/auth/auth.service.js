@@ -8,7 +8,11 @@ const config = require('../../config');
 
 const scrypt = promisify(crypto.scrypt);
 const USERNAME_RE = /^[a-zA-Z0-9_.@-]{3,32}$/;
-const PASSWORD_MIN_LENGTH = 6;
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MAX_LENGTH = 128;
+// 复杂度基线：至少同时包含一个字母和一个数字，拒绝纯数字/纯字母弱口令
+const PASSWORD_LETTER_RE = /[a-zA-Z]/;
+const PASSWORD_DIGIT_RE = /\d/;
 const BLOCKED_USERNAMES = [
   'admin', 'root', 'system', 'test', 'guest', 'null', 'undefined',
   '管理员', '系统', '测试', '客服',
@@ -95,6 +99,18 @@ async function verifyPassword(password, passwordHash) {
 }
 
 class AuthService {
+  // 密码策略：长度 8-128，且需同时包含字母和数字（注册与改密共用同一套基线）
+  assertPasswordPolicy(password) {
+    const pwd = String(password || '');
+    if (pwd.length < PASSWORD_MIN_LENGTH || pwd.length > PASSWORD_MAX_LENGTH) {
+      throw createAuthError('INVALID_PASSWORD', `密码长度需为 ${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} 位`);
+    }
+    if (!PASSWORD_LETTER_RE.test(pwd) || !PASSWORD_DIGIT_RE.test(pwd)) {
+      throw createAuthError('INVALID_PASSWORD', '密码需同时包含字母和数字');
+    }
+    return pwd;
+  }
+
   validateRegistration({ username, password, studentId }) {
     const normalizedUsername = normalizeUsername(username);
     if (!USERNAME_RE.test(normalizedUsername)) {
@@ -103,16 +119,18 @@ class AuthService {
     if (BLOCKED_USERNAMES.includes(normalizedUsername)) {
       throw createAuthError('INVALID_USERNAME', '该用户名不可用，请换一个');
     }
-    if (!password || String(password).length < PASSWORD_MIN_LENGTH) {
-      throw createAuthError('INVALID_PASSWORD', `密码至少 ${PASSWORD_MIN_LENGTH} 位`);
-    }
+    this.assertPasswordPolicy(password);
     if (studentId && String(studentId).trim().length > 32) {
       throw createAuthError('INVALID_STUDENT_ID', '学号长度不能超过 32 位');
     }
     return normalizedUsername;
   }
 
-  async register({ username, password, studentId }) {
+  async register({ username, password, studentId, inviteCode }) {
+    // 部署方设置 AUTH_INVITE_CODE 后注册必须携带正确邀请码（常量时间比较）；未配置时开放注册
+    if (config.auth.inviteCode && !timingSafeSecretEqual(String(inviteCode || ''), config.auth.inviteCode)) {
+      throw createAuthError('INVALID_INVITE_CODE', '邀请码无效，请核对后重试', 403);
+    }
     const normalizedUsername = this.validateRegistration({ username, password, studentId });
     const existing = stmt.byUsername.get(normalizedUsername);
     if (existing) {
@@ -167,14 +185,13 @@ class AuthService {
     if (!userId || !currentPassword || !newPassword) {
       throw createAuthError('MISSING_PARAMS', '缺少必要参数');
     }
-    if (String(newPassword).length < PASSWORD_MIN_LENGTH) {
-      throw createAuthError('INVALID_PASSWORD', `密码至少 ${PASSWORD_MIN_LENGTH} 位`);
-    }
 
     // 管理员不允许通过此接口修改密码
     if (userId === 'admin') {
       throw createAuthError('ADMIN_NOT_ALLOWED', '管理员密码请在环境变量中修改', 403);
     }
+
+    this.assertPasswordPolicy(newPassword);
 
     const row = stmt.byId.get(userId);
     if (!row) {

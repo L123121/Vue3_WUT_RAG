@@ -30,6 +30,7 @@
 - SQLite WAL 持久化存储（唯一实现）。
 - Qdrant 唯一向量后端。
 - Helmet、CORS 白名单、接口限流、用户配额、私有附件归属鉴权和上传文件 MIME 校验。
+- 隐私留存清理：后台任务按留存天数定期清除到期数据（RunEvent 回放日志默认 30 天，分享快照与会话默认不限期、可按站点合规要求开启）。
 - 工具参数 Schema 校验、超时取消、客户端断开传播、循环检测与失败降级。
 - 前端流式渲染用 requestAnimationFrame 合并高频增量更新，后台 Tab 暂停 RAF 时立即落盘待写内容；发版后旧页面的 chunk 加载失败可自动识别并恢复；Markdown Worker 以低频采样上报队列、耗时和过期结果。
 - RAG 全链路可观测：traceId 贯穿 embedding、检索、重排、父段组装、生成、grounding 各阶段并记录耗时；RunEvent v1 支持序号/终态、管理员 JSONL 回放和运行级完成率/P95/工具/降级指标。
@@ -321,7 +322,10 @@ RAG 与 Agent 评测脚本位于 `scripts/rag-eval/`，主要数据集位于 `sc
 | `JUDGE_MODEL` | `step-3.5-flash` | Judge 模型 |
 | `OCR_ENABLED` | `true` | 图片与扫描 PDF OCR |
 | `OCR_MODEL` | `step-1o-turbo-vision` | OCR 视觉模型 |
-| `AUTH_INVITE_CODE` | 空 | 注册邀请码；为空时不要求邀请码 |
+| `AUTH_INVITE_CODE` | 空 | 注册邀请码；为空时不要求邀请码，配置后注册必须携带正确邀请码 |
+| `RUN_EVENT_LOG_RETENTION_DAYS` | `30` | RunEvent 回放日志留存天数，到期自动清理；`0` 表示不限 |
+| `SHARE_SNAPSHOT_RETENTION_DAYS` | `0` | 分享快照留存天数，到期自动清理；`0` 表示不自动删除 |
+| `CONVERSATION_RETENTION_DAYS` | `0` | 会话（含消息）留存天数，到期自动清理；`0` 表示不自动删除 |
 | `ADMIN_USERNAME` | `admin` | 管理员用户名 |
 | `ADMIN_PASSWORD` | 随机生成 | 生产环境应显式设置 |
 | `QUOTA_DAILY_LIMIT` | `100` | 普通用户每日调用额度 |

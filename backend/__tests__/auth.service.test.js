@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 
 /**
  * auth.service 单元测试 — 密码哈希、注册/登录、管理员分支、改密流程
@@ -29,6 +29,7 @@ require.cache[betterSqlite3Id] = {
 };
 
 const authService = require('../src/services/auth/auth.service');
+const config = require('../src/config');
 
 const testDb = () => instances[0];
 
@@ -37,6 +38,9 @@ if (instances.length === 0) {
   throw new Error('better-sqlite3 内存库替换未生效,拒绝在真实数据库上运行测试');
 }
 
+// 密码策略:8-128 位且需同时包含字母和数字(与 assertPasswordPolicy 一致)
+const VALID_PASSWORD = 'pass1234';
+
 describe('validateRegistration', () => {
   it.each([
     ['ab', '用户名过短'],
@@ -44,28 +48,34 @@ describe('validateRegistration', () => {
     ['user name', '包含空格'],
     ['用户名', '包含中文'],
   ])('拒绝非法用户名: %s (%s)', (username) => {
-    expect(() => authService.validateRegistration({ username, password: '123456' }))
+    expect(() => authService.validateRegistration({ username, password: VALID_PASSWORD }))
       .toThrowError(expect.objectContaining({ code: 'INVALID_USERNAME' }));
   });
 
   it.each(['admin', 'root', 'system', '管理员'])('拒绝保留用户名: %s', (username) => {
-    expect(() => authService.validateRegistration({ username, password: '123456' }))
+    expect(() => authService.validateRegistration({ username, password: VALID_PASSWORD }))
       .toThrowError(expect.objectContaining({ code: 'INVALID_USERNAME' }));
   });
 
-  it('拒绝短于 6 位的密码', () => {
-    expect(() => authService.validateRegistration({ username: 'alice', password: '12345' }))
+  it.each([
+    ['1234567', '短于 8 位'],
+    ['a'.repeat(129), '长于 128 位'],
+    ['12345678', '纯数字'],
+    ['abcdefgh', '纯字母'],
+    ['', '空密码'],
+  ])('拒绝不合规密码: %s (%s)', (password) => {
+    expect(() => authService.validateRegistration({ username: 'alice', password }))
       .toThrowError(expect.objectContaining({ code: 'INVALID_PASSWORD' }));
   });
 
-  it('拒绝超过 32 位的学号', () => {
-    expect(() => authService.validateRegistration({ username: 'alice', password: '123456', studentId: '1'.repeat(33) }))
-      .toThrowError(expect.objectContaining({ code: 'INVALID_STUDENT_ID' }));
+  it('接受合规密码并返回归一化用户名', () => {
+    expect(authService.validateRegistration({ username: '  Alice@WHUT  ', password: 'abcd1234' }))
+      .toBe('alice@whut');
   });
 
-  it('用户名统一转小写返回', () => {
-    expect(authService.validateRegistration({ username: '  Alice@WHUT  ', password: '123456' }))
-      .toBe('alice@whut');
+  it('拒绝超过 32 位的学号', () => {
+    expect(() => authService.validateRegistration({ username: 'alice', password: VALID_PASSWORD, studentId: '1'.repeat(33) }))
+      .toThrowError(expect.objectContaining({ code: 'INVALID_STUDENT_ID' }));
   });
 });
 
@@ -145,6 +155,40 @@ describe('register + login 往返', () => {
   });
 });
 
+describe('邀请码校验（AUTH_INVITE_CODE）', () => {
+  afterEach(() => {
+    config.auth.inviteCode = '';
+  });
+
+  it('未配置邀请码时开放注册', async () => {
+    config.auth.inviteCode = '';
+
+    const user = await authService.register({ username: 'no_invite', password: VALID_PASSWORD });
+
+    expect(user.username).toBe('no_invite');
+  });
+
+  it('配置邀请码后,错误或缺失的邀请码被拒绝且不落库', async () => {
+    config.auth.inviteCode = 'secret-invite';
+
+    await expect(authService.register({ username: 'iv_wrong', password: VALID_PASSWORD, inviteCode: 'wrong-code' }))
+      .rejects.toMatchObject({ code: 'INVALID_INVITE_CODE', status: 403 });
+    await expect(authService.register({ username: 'iv_missing', password: VALID_PASSWORD }))
+      .rejects.toMatchObject({ code: 'INVALID_INVITE_CODE', status: 403 });
+
+    const rows = testDb().prepare("SELECT COUNT(*) AS cnt FROM users WHERE username LIKE 'iv_%'").get();
+    expect(rows.cnt).toBe(0);
+  });
+
+  it('配置邀请码后携带正确邀请码可注册', async () => {
+    config.auth.inviteCode = 'secret-invite';
+
+    const user = await authService.register({ username: 'iv_ok', password: VALID_PASSWORD, inviteCode: 'secret-invite' });
+
+    expect(user.username).toBe('iv_ok');
+  });
+});
+
 describe('管理员登录分支', () => {
   it('正确的环境变量口令返回管理员身份', async () => {
     const admin = await authService.login({ username: 'admin', password: 'test-admin-password-123' });
@@ -167,12 +211,14 @@ describe('管理员登录分支', () => {
 });
 
 describe('changePassword', () => {
-  it('缺少参数、新密码过短、目标为管理员分别被拒', async () => {
+  it('缺少参数、新密码不合规、目标为管理员分别被拒', async () => {
     await expect(authService.changePassword('', 'a', 'b'))
       .rejects.toMatchObject({ code: 'MISSING_PARAMS' });
     await expect(authService.changePassword('user_x', 'current1', '12345'))
       .rejects.toMatchObject({ code: 'INVALID_PASSWORD' });
-    await expect(authService.changePassword('admin', 'current1', '123456'))
+    await expect(authService.changePassword('user_x', 'current1', 'abcdefgh'))
+      .rejects.toMatchObject({ code: 'INVALID_PASSWORD' });
+    await expect(authService.changePassword('admin', 'current1', '12345678'))
       .rejects.toMatchObject({ code: 'ADMIN_NOT_ALLOWED', status: 403 });
   });
 

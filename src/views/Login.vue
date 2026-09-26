@@ -104,7 +104,7 @@
                     :aria-invalid="Boolean(accountPasswordError)"
                     class="block w-full rounded-2xl border bg-white/80 py-4 pl-12 pr-12 text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-wut-600 focus:bg-white focus:ring-4 focus:ring-blue-600/10 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-slate-800/70 dark:text-white dark:focus:bg-slate-800"
                     :class="accountPasswordError ? 'border-red-300 dark:border-red-500/70' : 'border-slate-200 dark:border-slate-700'"
-                    placeholder="至少 6 位密码"
+                    placeholder="8-128 位，需包含字母和数字"
                     @input="clearError"
                   />
                   <button
@@ -140,6 +140,26 @@
                   />
                 </span>
                 <span v-if="accountConfirmPasswordError" class="mt-2 block text-xs text-red-500">{{ accountConfirmPasswordError }}</span>
+              </label>
+
+              <label :class="['block', accountMode !== 'register' ? 'invisible pointer-events-none' : '']">
+                <span class="mb-2 ml-1 block text-xs font-black uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">邀请码</span>
+                <span class="relative block">
+                  <Ticket class="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400 transition group-focus-within:text-wut-700" />
+                  <input
+                    id="account-invite-code"
+                    v-model.trim="accountInviteCode"
+                    type="text"
+                    autocomplete="off"
+                    :disabled="loading"
+                    :tabindex="accountMode !== 'register' ? -1 : 0"
+                    class="block w-full rounded-2xl border bg-white/80 py-4 pl-12 pr-4 text-slate-950 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-wut-600 focus:bg-white focus:ring-4 focus:ring-blue-600/10 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-slate-800/70 dark:text-white dark:focus:bg-slate-800"
+                    :class="accountInviteCodeError ? 'border-red-300 dark:border-red-500/70' : 'border-slate-200 dark:border-slate-700'"
+                    placeholder="站点启用邀请码注册时必填"
+                    @input="clearError"
+                  />
+                </span>
+                <span v-if="accountInviteCodeError" class="mt-2 block text-xs text-red-500">{{ accountInviteCodeError }}</span>
               </label>
 
               <div class="text-center">
@@ -203,12 +223,14 @@ import {
   ShieldCheck,
   Sparkles,
   Sun,
+  Ticket,
   User,
 } from 'lucide-vue-next';
 import logoUrl from '../assets/wuhan-university-logo.png';
 import { useAuthStore } from '../stores/auth.store.js';
 import { useConversationStore } from '../stores/conversation.store.js';
 import { useThemeStore } from '../stores/theme.store.js';
+import { validatePasswordPolicy } from '../utils/passwordPolicy.js';
 import { prefetchRoute, prefetchAll } from '../utils/prefetch.js';
 
 const ERROR_MESSAGES = {
@@ -235,6 +257,7 @@ const accountMode = ref('login'); // 'login' | 'register'
 const accountUsername = ref('');
 const accountPassword = ref('');
 const accountConfirmPassword = ref('');
+const accountInviteCode = ref('');
 const loading = ref(false);
 const error = ref('');
 const showPassword = ref(false);
@@ -267,10 +290,9 @@ const accountUsernameError = computed(() => {
   return '';
 });
 const accountPasswordError = computed(() => {
-  if (!submitted.value) return '';
+  if (!submitted.value || accountMode.value !== 'register') return '';
   if (!accountPassword.value) return '请输入密码';
-  if (accountPassword.value.length < 6) return '密码至少 6 位';
-  return '';
+  return validatePasswordPolicy(accountPassword.value);
 });
 const accountConfirmPasswordError = computed(() => {
   if (!submitted.value || accountMode.value !== 'register') return '';
@@ -278,9 +300,15 @@ const accountConfirmPasswordError = computed(() => {
   if (accountPassword.value !== accountConfirmPassword.value) return '两次密码输入不一致';
   return '';
 });
+const accountInviteCodeError = computed(() => {
+  if (!submitted.value || accountMode.value !== 'register') return '';
+  // 邀请码是否必填由后端 AUTH_INVITE_CODE 决定，这里仅在报错后提示补填
+  return '';
+});
 const isFormValid = computed(() => (
   accountMode.value === 'register'
     ? Boolean(accountUsername.value.trim() && accountPassword.value && accountConfirmPassword.value)
+      && !accountPasswordError.value && !accountConfirmPasswordError.value
     : Boolean(accountUsername.value.trim() && accountPassword.value)
 ));
 
@@ -302,6 +330,9 @@ const formatLoginError = (loginError) => {
   if (loginError?.code === 'USERNAME_EXISTS') {
     return '用户名已存在，请换一个';
   }
+  if (loginError?.code === 'INVALID_INVITE_CODE') {
+    return '邀请码无效，请核对后重新输入';
+  }
   return ERROR_MESSAGES[loginError?.code] || loginError?.message || '登录失败，请稍后重试';
 };
 
@@ -320,7 +351,7 @@ async function handleSubmit() {
 
   try {
     if (accountMode.value === 'register') {
-      await authStore.register(accountUsername.value, accountPassword.value);
+      await authStore.register(accountUsername.value, accountPassword.value, accountInviteCode.value);
     } else {
       await authStore.login(accountUsername.value, accountPassword.value);
     }

@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import { useAuthStore } from '../../stores/auth.store.js';
 import { useThemeStore } from '../../stores/theme.store.js';
 import { useToastStore } from '../../stores/toast.store.js';
+import { validatePasswordPolicy } from '../../utils/passwordPolicy.js';
 import { Moon, Sun, Upload, Lock, Loader2 } from 'lucide-vue-next';
 
 defineProps({ show: Boolean });
@@ -42,7 +43,8 @@ const resetPasswordForm = () => {
 
 const handleChangePassword = async () => {
   if (!currentPassword.value) { toastStore.error('请输入当前密码'); return; }
-  if (!newPassword.value || newPassword.value.length < 6) { toastStore.error('新密码至少 6 位'); return; }
+  const policyError = validatePasswordPolicy(newPassword.value);
+  if (policyError) { toastStore.error(`新密码${policyError}`); return; }
   if (newPassword.value !== confirmPassword.value) { toastStore.error('两次密码输入不一致'); return; }
 
   changePasswordLoading.value = true;
@@ -107,7 +109,7 @@ const handleChangePassword = async () => {
 
       <div v-else class="space-y-2 p-3 rounded-lg bg-slate-50 dark:bg-gray-800/60 border border-slate-200 dark:border-gray-700">
         <input v-model="currentPassword" type="password" class="block w-full h-8 rounded-md border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2.5 text-xs text-slate-900 dark:text-gray-100 placeholder-slate-400 outline-none focus:border-wut-500" placeholder="当前密码" />
-        <input v-model="newPassword" type="password" class="block w-full h-8 rounded-md border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2.5 text-xs text-slate-900 dark:text-gray-100 placeholder-slate-400 outline-none focus:border-wut-500" placeholder="新密码（至少 6 位）" />
+        <input v-model="newPassword" type="password" class="block w-full h-8 rounded-md border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2.5 text-xs text-slate-900 dark:text-gray-100 placeholder-slate-400 outline-none focus:border-wut-500" placeholder="新密码（8 位以上，含字母和数字）" />
         <input v-model="confirmPassword" type="password" class="block w-full h-8 rounded-md border border-slate-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-2.5 text-xs text-slate-900 dark:text-gray-100 placeholder-slate-400 outline-none focus:border-wut-500" placeholder="确认新密码" />
         <div class="flex gap-2">
           <button @click="handleChangePassword" :disabled="changePasswordLoading" class="flex-1 h-7 rounded-md text-xs font-medium bg-wut-600 text-white hover:bg-wut-700 transition-colors disabled:opacity-50 inline-flex items-center justify-center gap-1">
