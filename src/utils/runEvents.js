@@ -1,3 +1,7 @@
+/**
+ * @import { RunEvent, RunEventHandlerMap } from '../types/runEvents'
+ */
+
 export const RUN_EVENT_VERSION = 1;
 
 export const RUN_EVENT_TYPES = Object.freeze({
@@ -45,6 +49,10 @@ export const isRunEventV1 = (value) => (
 /**
  * 实时流与历史回放共用的事件映射器。
  * 只负责把协议事件投影到 UI 回调，不负责 runId/seq 校验或状态收敛。
+ *
+ * @param {RunEvent} event
+ * @param {RunEventHandlerMap} [handlers]
+ * @returns {boolean} 事件通过 v1 校验并分发时为 true
  */
 export const dispatchRunEvent = (event, handlers = {}) => {
   if (!isRunEventV1(event)) return false;

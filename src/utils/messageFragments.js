@@ -1,3 +1,7 @@
+/**
+ * @import { ChatMessage, MessageFragment } from '../types/chat'
+ */
+
 export const MESSAGE_FRAGMENT_VERSION = 1;
 
 export const MESSAGE_FRAGMENT_TYPES = Object.freeze({
@@ -153,6 +157,11 @@ const createKnownFragment = (type, value, existing) => {
 /**
  * 为历史消息与实时消息生成同一套可渲染 fragment 描述。
  * 已知 fragment 只引用兼容字段，避免把正文、来源和 trace 再复制一份到缓存。
+ */
+/**
+ * 从消息的已知字段派生 fragments 协议 v1 数组（幂等，可反复调用）
+ * @param {Partial<ChatMessage>} [message]
+ * @returns {ChatMessage} 带 fragments 的消息副本
  */
 export const hydrateMessageFragments = (message = {}) => {
   const existing = getExistingFragments(message);

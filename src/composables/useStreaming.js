@@ -1,7 +1,9 @@
 /**
  * useStreaming — 流式消息处理 composable
  *
- * 管理 SSE 流式请求的建立、chunk 处理、重连、中断
+ * 管理 SSE 流式请求的建立、chunk 处理、重连、中断。
+ * 机制拆分：RAF 缓冲见 streaming/runBuffer.js，字段补丁回调见 streaming/messagePatches.js，
+ * 纯辅助函数见 streaming/streamHelpers.js
  */
 
 import { ref, onUnmounted } from 'vue';
@@ -19,12 +21,16 @@ import {
   TERMINAL_RUN_EVENT_TYPES,
 } from '../utils/runEvents.js';
 import {
-  appendUnknownMessageFragment,
   clearMessageAttemptState,
   hydrateMessageFragments,
-  patchMessageForEvent,
-  toLlmHistoryMessage,
 } from '../utils/messageFragments.js';
+import { createRunBuffer } from './streaming/runBuffer.js';
+import { createMessagePatchHandlers } from './streaming/messagePatches.js';
+import {
+  buildHistory,
+  autoRenameConversationIfNeeded,
+  createFirstFrameRecorder,
+} from './streaming/streamHelpers.js';
 
 const STREAM_STALL_TIMEOUT = 60000;
 const TERMINAL_RUN_STATUSES = new Set(['completed', 'failed', 'aborted']);
@@ -92,10 +98,9 @@ export function useStreaming() {
   // 当前正在流式的会话 id（响应式，供 store 层在切换会话时判断是否需中止）
   const activeStreamingConversationId = ref(null);
   let unsubscribeConnection = null;
-  let rafId = null;
-  let pendingContent = '';
-  let pendingRunId = null;
   let visibilityHandler = null;
+  // 每次 sendMessage 设置的 TTFT 首帧记录器（runBuffer 是 composable 级共享的）
+  let firstFrameHandler = null;
 
   const getRun = (runId) => runsById.value[runId] || null;
   const patchRun = (runId, patch) => {
@@ -132,36 +137,23 @@ export function useStreaming() {
     return true;
   };
 
-  const flushPendingContent = (runId) => {
-    if (!runId || pendingRunId !== runId || !pendingContent) return false;
-    const run = getRun(runId);
-    if (!run || !isCurrentRun(runId)) {
-      pendingContent = '';
-      pendingRunId = null;
-      return false;
-    }
-    const content = pendingContent;
-    pendingContent = '';
-    pendingRunId = null;
-    const convStore = useConversationStore();
-    updateMessage(convStore, run.conversationId, run.assistantMessageId, (m) => {
-      const newText = getMessageText(m) + content;
-      return { ...m, text: newText, content: newText };
-    });
-    return true;
-  };
-
-  const cancelPendingRaf = (flushToMessage = false, runId = activeRunId.value) => {
-    if (rafId && pendingRunId === runId) {
-      cancelAnimationFrame(rafId);
-      rafId = null;
-    }
-    if (flushToMessage) flushPendingContent(runId);
-    if (pendingRunId === runId) {
-      pendingContent = '';
-      pendingRunId = null;
-    }
-  };
+  // 流式 chunk 缓冲：缓冲内容按 runId 落地为消息正文追加
+  const runBuffer = createRunBuffer({
+    isCurrentRun,
+    applyFlush: (runId, content) => {
+      const run = getRun(runId);
+      if (!run) return;
+      updateMessage(useConversationStore(), run.conversationId, run.assistantMessageId, (m) => {
+        const newText = getMessageText(m) + content;
+        return { ...m, text: newText, content: newText };
+      });
+    },
+    onFirstFramePainted: () => firstFrameHandler?.(),
+  });
+  // 保留默认参数语义：缺省时作用于当前活跃 run
+  const cancelPendingRaf = (flushToMessage = false, runId = activeRunId.value) => (
+    runBuffer.cancelPendingRaf(flushToMessage, runId)
+  );
 
   const abortRun = (runId = activeRunId.value, { persist = true } = {}) => {
     const run = getRun(runId);
@@ -237,24 +229,6 @@ export function useStreaming() {
     cleanup();
   });
 
-  const buildHistory = (msgs, currentUserMessageId) => {
-    const rawHistory = msgs
-      .filter((m) => m.id !== currentUserMessageId)
-      .map(toLlmHistoryMessage)
-      .filter(Boolean)
-      .slice(-20);
-
-    const history = [];
-    let lastRole = '';
-    for (const m of rawHistory) {
-      if (m.role === lastRole && history.length > 0) history.pop();
-      history.push(m);
-      lastRole = m.role;
-    }
-    if (history.length > 0 && history[history.length - 1].role === 'user') history.pop();
-    return history;
-  };
-
   const sendMessage = async (text, retryMsgId = null, fileData = null, onStreamEvent) => {
     const trimmedText = text.trim();
     const convStore = useConversationStore();
@@ -324,7 +298,7 @@ export function useStreaming() {
     // TTFT 埋点变量
     const streamStartTime = performance.now();
     let firstChunkReceived = false;
-    let firstFramePainted = false;
+    firstFrameHandler = createFirstFrameRecorder(streamStartTime, text);
 
     const history = buildHistory(convStore.conversations[convIndex].messages || [], userMsg.id);
 
@@ -358,6 +332,17 @@ export function useStreaming() {
         ? `${fileBlock}\n\n用户问题: ${trimmedText}`
         : `${fileBlock}\n\n请根据以上文件内容回答。`;
     }
+
+    // 以下九类事件都只是"整体替换/整体追加某个字段"，合并策略声明在
+    // messageFragments.js::MESSAGE_EVENT_PATCH_RULES 里，新增一种同类事件
+    // 只需在那张表里加一行，不必在这里再手写一个 updater。
+    const patchHandlers = createMessagePatchHandlers({
+      writeMessage: (convId, msgId, updater) => updateMessage(convStore, convId, msgId, updater),
+      conversationId,
+      aiMsgId,
+      runId,
+      clearRunDecisionDraft,
+    });
 
     return new Promise((resolve, reject) => {
       let resolved = false;
@@ -410,92 +395,19 @@ export function useStreaming() {
             const firstChunkMs = Math.round(performance.now() - streamStartTime);
             if (import.meta.env.DEV) console.debug(`[TTFT] 首字上屏(RAF前): ${firstChunkMs}ms`);
           }
-          pendingRunId = runId;
-          pendingContent += content;
-          if (!rafId) {
-            const scheduledRunId = runId;
-            rafId = requestAnimationFrame(() => {
-              rafId = null;
-              // 被中止或替换的旧 run 不得消费新 run 的共享 RAF 缓冲。
-              if (!isCurrentRun(scheduledRunId)) {
-                if (pendingRunId === scheduledRunId) {
-                  pendingContent = '';
-                  pendingRunId = null;
-                }
-                return;
-              }
-              // 首字渲染埋点：RAF 回调执行 = 真正写 DOM 的时刻
-              if (!firstFramePainted) {
-                firstFramePainted = true;
-                const firstFrameMs = Math.round(performance.now() - streamStartTime);
-                if (import.meta.env.DEV) console.debug(`[TTFT] 首字渲染(DOM写入): ${firstFrameMs}ms`);
-                try {
-                  const key = 'ttft_frame_measurements';
-                  const arr = JSON.parse(localStorage.getItem(key) || '[]');
-                  arr.push({ ts: Date.now(), firstFrame: firstFrameMs, msg: text.substring(0, 30) });
-                  while (arr.length > 100) arr.shift();
-                  localStorage.setItem(key, JSON.stringify(arr));
-                } catch {}
-              }
-              flushPendingContent(scheduledRunId);
-            });
-          }
+          runBuffer.bufferChunk(runId, content);
           onStreamEvent?.('chunk', content);
         },
-        // 以下九类事件都只是"整体替换/整体追加某个字段"，合并策略声明在
-        // messageFragments.js::MESSAGE_EVENT_PATCH_RULES 里，新增一种同类事件
-        // 只需在那张表里加一行，不必在这里再手写一个 updater。
-        onSources: (sources) => {
-          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'sources', sources));
-        },
-        onIntent: (intent) => {
-          // V2.0 自动路由：记录后端意图识别结果，前端展示"自动路由：知识库检索"等
-          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'intent', intent));
-        },
-        onDecision: (decision) => {
-          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'decision', decision));
-        },
-        onToolCall: (toolCall) => {
-          // 决策草稿被工具调用取代 → 收起该 run 的草稿，前端展示过程卡片
-          clearRunDecisionDraft(runId);
-          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'toolCall', toolCall));
-        },
-        onToolResult: (toolResult) => {
-          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'toolResult', toolResult));
-        },
-        onTrace: (payload) => {
-          // agent/agenticRag：Agent 链路的轮次/工具/收尾原因 trace（兼容字段仍共用 ragTrace，
-          // Fragment hydration 根据 finishReason 区分 Agent 与 RAG 渲染）
-          const trace = payload?.agent || payload?.agenticRag || payload?.trace || null;
-          const rag = payload?.rag || trace?.outcome || {};
-          const usedRag = rag.usedRag === true;
-          const incomingTraceId = payload?.traceId || trace?.traceId || '';
-          updateMessage(convStore, conversationId, aiMsgId, (m) => {
-            const traceId = incomingTraceId || m.traceId;
-            const traceWithIdentity = trace ? { ...trace, traceId } : m.ragTrace;
-            return {
-              ...m,
-              traceId,
-              ragTrace: traceWithIdentity,
-              ...(usedRag ? { answerMode: 'rag', usedRag: true } : {}),
-            };
-          });
-        },
-        onProcess: (processCard) => {
-          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'processCard', processCard));
-        },
-        onGrounding: (grounding) => {
-          // 运行时引用校验：溯源覆盖率随收尾下发，MessageBubble 展示"已溯源 xx%"徽标
-          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'grounding', grounding));
-        },
-        onUsage: (usage) => {
-          // token 用量随收尾下发，MessageBubble 展示输入/输出 token
-          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'usage', usage));
-        },
-        onFollowups: (items) => {
-          // 追问建议随收尾下发，MessageBubble 渲染为可点击 chips
-          updateMessage(convStore, conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'followups', items));
-        },
+        onSources: patchHandlers.onSources,
+        onIntent: patchHandlers.onIntent,
+        onDecision: patchHandlers.onDecision,
+        onToolCall: patchHandlers.onToolCall,
+        onToolResult: patchHandlers.onToolResult,
+        onTrace: patchHandlers.onTrace,
+        onProcess: patchHandlers.onProcess,
+        onGrounding: patchHandlers.onGrounding,
+        onUsage: patchHandlers.onUsage,
+        onFollowups: patchHandlers.onFollowups,
         onRetry: (nextAttempt) => {
           const currentAttempt = getRun(runId)?.attempt || 0;
           const attempt = Number.isInteger(nextAttempt) ? nextAttempt : currentAttempt + 1;
@@ -519,22 +431,7 @@ export function useStreaming() {
               return { ...m, text: newText, content: newText };
             });
           }
-          if (conv && (conv.title.startsWith('新会话') || conv.title === '默认会话')) {
-            const userText = trimmedText;
-            if (userText) {
-              const cleanText = userText
-                .replace(/[【】《》「」『』""'']/g, '')
-                .replaceAll('[', '')
-                .replaceAll(']', '')
-                .replace(/[#*_~`\\]/g, '')
-                .trim();
-              const greeting = /^(你好|您好|hi|hello|嗨|hey|在吗|在不在|早上好|晚上好|下午好)[!！.。]?$/i;
-              conv.title = greeting.test(cleanText) ? '新对话' : (cleanText.slice(0, 10) || '新对话');
-              convStore.renameConversation(conversationId, conv.title);
-              convStore.scheduleSaveCache(true);
-            }
-          }
-
+          autoRenameConversationIfNeeded(conv, convStore, trimmedText);
           convStore.scheduleSaveCache(true);
           onStreamEvent?.('done');
           markResolved();
@@ -586,11 +483,7 @@ export function useStreaming() {
           onFollowups: (followups) => callbacks.onFollowups(followups),
           onDone: () => callbacks.onDone(),
           onError: (error) => callbacks.onError(error),
-          onUnknown: ({ type, data, origin }) => updateMessage(convStore, conversationId, aiMsgId, (m) => appendUnknownMessageFragment(m, {
-            type,
-            data,
-            origin,
-          })),
+          onUnknown: (fragment) => patchHandlers.onUnknown(fragment),
         });
       };
 
