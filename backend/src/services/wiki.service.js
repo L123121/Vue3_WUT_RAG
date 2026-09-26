@@ -147,6 +147,8 @@ class WikiService {
     this.documentService = documentService || new DocumentService();
     // 显式注入（测试/未来 DI）优先；生产路径首次真正调用互链梳理时才惰性 require
     this._aiServiceOverride = aiServiceOverride || null;
+    // 互链编译去重：setVisibility 的异步触发与显式重算并发时复用同一 in-flight Promise
+    this._relationCompiles = new Map();
   }
 
   get aiService() {
@@ -276,8 +278,20 @@ class WikiService {
    * 编译期互链梳理：从同批已上架词条里选出候选池，交给 LLM 判断关联，
    * 不在查询期做——查询期只读这里写好的 relatedPages，零额外调用。
    * 可被 setVisibility 异步触发，也可被管理端接口显式调用重算。
+   * 同一词条的并发编译去重（复用 in-flight Promise），避免同一 revision 付两次 LLM 调用；
+   * 已完成后再次显式调用仍会重算。
    */
-  async compileRelatedPages(docId) {
+  compileRelatedPages(docId) {
+    const inFlight = this._relationCompiles.get(docId);
+    if (inFlight) return inFlight;
+    const task = this._compileRelatedPages(docId).finally(() => {
+      this._relationCompiles.delete(docId);
+    });
+    this._relationCompiles.set(docId, task);
+    return task;
+  }
+
+  async _compileRelatedPages(docId) {
     const relationConfig = config.wiki || {};
     const doc = await this.documentService.getDocument(docId);
     if (!doc) return [];

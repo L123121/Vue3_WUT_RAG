@@ -27,6 +27,8 @@ const ragRetrieval = require('./rag-retrieval.service');
 const { buildFollowups } = require('./rag-followups.service');
 const ragPipeline = require('./rag-pipeline.service');
 const ragGeneration = require('./rag-generation.service');
+const { tryWikiPipeline, mergeWikiAndRagPipelines } = require('./rag-wiki-pipeline');
+const { drainChat } = require('./rag-chat-drain');
 const { logEvent } = require('./observability.service');
 
 class RagService {
@@ -115,72 +117,11 @@ class RagService {
   }
 
   async _tryWikiPipeline(message, options = {}) {
-    if (options.wikiFirst === false || this.wikiFirstEnabled === false) return null;
-    try {
-      const entries = await this.wikiService.searchPublished(message, { limit: this.wikiFirstMaxEntries });
-      if (!entries.length) return null;
-      const sources = entries.map((entry, index) => ({
-        id: entry.id,
-        docId: entry.id,
-        title: entry.title,
-        category: entry.category,
-        slug: entry.slug,
-        score: Math.max(0.5, 1 - index * 0.05),
-        sourceType: 'wiki',
-        stale: false,
-      }));
-      const context = entries.map((entry, index) => `【文档 ${index + 1}】${entry.title}（Wiki）\n${entry.body}`).join('\n\n').slice(0, options.maxContextLength || this.maxContextLength);
-      return {
-        context,
-        sources,
-        topChunks: entries.map((entry, index) => ({ id: entry.id, docId: entry.id, title: entry.title, text: entry.body.slice(0, 1200), score: sources[index].score })),
-        retrieval: { mode: 'wiki_navigation', topK: entries.length, sourceType: 'wiki' },
-        questionType: this.classifyQuestion(message),
-        rewrittenQuery: message,
-        hasReliableCandidates: Boolean(context),
-        sourceKind: 'wiki',
-        fallbackReason: null,
-      };
-    } catch (error) {
-      logEvent('warn', 'rag_wiki_first_failed_fallback_qdrant', { error: error.message });
-      return null;
-    }
+    return tryWikiPipeline(this, message, options);
   }
 
   _mergeWikiAndRagPipelines(wikiPipeline, ragPipeline, maxContextLength = this.maxContextLength) {
-    if (!wikiPipeline) return ragPipeline;
-    if (!ragPipeline) return wikiPipeline;
-
-    const wikiSources = Array.isArray(wikiPipeline.sources) ? wikiPipeline.sources : [];
-    const ragSources = Array.isArray(ragPipeline.sources) ? ragPipeline.sources : [];
-    const offset = wikiSources.length;
-    const wikiContext = String(wikiPipeline.context || '');
-    const ragContext = String(ragPipeline.context || '').replace(/【文档\s+(\d+)】/g, (_, index) => (
-      `【文档 ${Number(index) + offset}】`
-    ));
-    const separator = wikiContext && ragContext ? `\n\n${'='.repeat(40)}\n\n` : '';
-    const wikiBudget = ragContext ? Math.floor(maxContextLength * 0.4) : maxContextLength;
-    const ragBudget = ragContext ? Math.max(maxContextLength - wikiBudget - separator.length, 200) : 0;
-    const context = `${wikiContext.slice(0, wikiBudget)}${separator}${ragContext.slice(0, ragBudget)}`.slice(0, maxContextLength);
-
-    return {
-      ...ragPipeline,
-      context,
-      sources: [...wikiSources, ...ragSources],
-      topChunks: [
-        ...(Array.isArray(wikiPipeline.topChunks) ? wikiPipeline.topChunks : []),
-        ...(Array.isArray(ragPipeline.topChunks) ? ragPipeline.topChunks : []),
-      ],
-      hasReliableCandidates: Boolean(wikiPipeline.hasReliableCandidates || ragPipeline.hasReliableCandidates),
-      sourceKind: 'hybrid',
-      retrieval: {
-        ...(ragPipeline.retrieval || {}),
-        mode: 'wiki_qdrant_hybrid',
-        wikiCount: wikiSources.length,
-        qdrantCount: ragSources.length,
-      },
-      fallbackReason: null,
-    };
+    return mergeWikiAndRagPipelines(wikiPipeline, ragPipeline, maxContextLength);
   }
 
   /**
@@ -341,117 +282,10 @@ class RagService {
 
   /**
    * 非流式 RAG 问答：统一 drain chatStream()（单一管线驱动，消除两套循环的 drift 风险，
-   * 与 agent.service.chat 的收口方式一致）。
-   *
-   * 返回形状与原实现对齐：context/topChunks/questionType/rewrittenQuery/retrieval 随
-   * chatStream 的 done 事件回传（includePipeline 仅此处使用，公开流式端点不受影响）。
-   * 检索管线本身崩溃时（chatStream 内部已含生成失败降级）降级纯 LLM，与旧行为一致。
+   * 与 agent.service.chat 的收口方式一致）。drain 与纯 LLM 降级拆至 rag-chat-drain.js。
    */
   async chat(message, history = [], options = {}) {
-    const totalStart = Date.now();
-    let reply = '';
-    let sources = [];
-    let usage = null;
-    let processCard = null;
-    let grounding = null;
-    let followups = [];
-    let trace = null;
-    let pipelineMeta = null;
-
-    try {
-      for await (const event of this.chatStream(message, history, { ...options, includePipeline: true })) {
-        if (event.type === 'content') {
-          if (event.done) pipelineMeta = event.pipeline || pipelineMeta;
-          else reply += event.content || '';
-        } else if (event.type === 'sources') {
-          sources = event.sources || [];
-        } else if (event.type === 'usage') {
-          usage = event.usage || null;
-        } else if (event.type === 'process') {
-          processCard = event.processCard || null;
-        } else if (event.type === 'grounding') {
-          grounding = event.grounding || null;
-        } else if (event.type === 'followups') {
-          followups = event.items || [];
-        } else if (event.type === 'trace') {
-          trace = event.trace || trace;
-        }
-      }
-    } catch (err) {
-      if (err.code === 'INCOMPLETE_STREAM') throw err;
-      const tracer = this._createTracer(message, options);
-      tracer.markFallback('rag_pipeline_error');
-      this._recordTraceStage(tracer, 'rag_pipeline', Date.now(), false, {}, err);
-      logEvent('warn', 'rag_pipeline_fallback', { error: err.message });
-
-      const aiStart = Date.now();
-      try {
-        const result = await this.aiService.getCompletion(message, history, options);
-        const aiLatency = Date.now() - aiStart;
-        metrics.recordLatency('ai', aiLatency);
-        this._recordTraceStage(tracer, 'llm', aiStart, true, {
-          model: config.ai.model || 'step-3.7-flash',
-          isMock: !!result.isMock,
-          outputChars: (result.content || '').length,
-          usage: result.usage || null,
-        });
-        metrics.recordLatency('total', Date.now() - totalStart);
-        metrics.recordRagQuery({ usedRag: false, usedParentChild: false });
-        this._recordTraceStage(tracer, 'total', totalStart, true, { usedRag: false });
-
-        return this._finishTrace(tracer, {
-          reply: result.content,
-          isMock: result.isMock,
-          sources: [],
-          context: '',
-          model: config.ai.model || 'step-3.7-flash',
-          usage: result.usage || null,
-        }, { usedRag: false, usedParentChild: false });
-      } catch (llmErr) {
-        this._recordTraceStage(tracer, 'llm', aiStart, false, { model: config.ai.model || 'step-3.7-flash' }, llmErr);
-        this._recordTraceStage(tracer, 'total', totalStart, false, { usedRag: false }, llmErr);
-        tracer.markError(llmErr);
-        tracer.finish({ usedRag: false, usedParentChild: false });
-        throw llmErr;
-      }
-    }
-
-    const context = pipelineMeta?.context || '';
-    const topChunks = Array.isArray(pipelineMeta?.topChunks) ? pipelineMeta.topChunks : [];
-    const fallbackReason = pipelineMeta?.fallbackReason || null;
-    const questionType = pipelineMeta?.questionType ?? null;
-    const rewrittenQuery = pipelineMeta?.rewrittenQuery ?? null;
-    const retrieval = pipelineMeta?.retrieval ?? null;
-    const totalLatency = Date.now() - totalStart;
-    const aiLatency = trace?.timings?.find((stage) => stage.name === 'llm')?.durationMs ?? 0;
-
-    return {
-      // 知识库为空时保持旧契约（reply=null）；其余路径 drain 到的即最终回复
-      reply: fallbackReason === 'no_documents' ? null : reply,
-      isMock: false,
-      sources,
-      context,
-      topChunks,
-      model: config.ai.model || 'step-3.7-flash',
-      usage,
-      questionType,
-      rewrittenQuery,
-      retrieval,
-      grounding: grounding || null,
-      processCard: processCard || null,
-      followups,
-      traceId: trace?.traceId || null,
-      trace: trace || null,
-      _metrics: {
-        totalLatency,
-        aiLatency,
-        matchedDocs: sources.length,
-        retrievedChunks: topChunks.length,
-        questionType,
-        rewrittenQuery,
-        retrieval,
-      },
-    };
+    return drainChat(this, message, history, options);
   }
 
   async *chatStream(message, history = [], options = {}) {
@@ -711,16 +545,3 @@ class RagService {
 }
 
 module.exports = { RagService, metrics };
-
-
-
-
-
-
-
-
-
-
-
-
-
