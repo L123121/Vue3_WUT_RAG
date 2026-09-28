@@ -56,10 +56,10 @@ jobs:
     name: Lint & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
           cache: "npm"
@@ -74,7 +74,7 @@ jobs:
       # 与 ci.yml 相同的模型缓存：E2E 在 CI 缺缓存时显式失败而非跳过
       - name: Cache embedding model
         id: model-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .model-cache
           key: embedding-bge-small-zh-v1.5
@@ -102,6 +102,10 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # 与 ci.yml 相同强度的离线语料/数据集一致性门禁
+      - name: Dataset & manifest integrity
+        run: npm run eval:dataset-check
+
       - name: Audit production dependencies
         run: |
           npm audit --omit=dev --audit-level=high
@@ -119,6 +123,17 @@ jobs:
         run: npm run eval:rag-baseline
         env:
           EVAL_API_BASE: ${{ secrets.RAG_EVAL_API_BASE }}
+
+      # 评测结果留存为 artifact：跨次部署可对比 Recall/p95 趋势，
+      # 这是"指标可复现"闭环的最后一环（结果此前只落在 runner 本地即丢弃）
+      - name: Upload eval results artifact
+        if: ${{ vars.RAG_EVAL_ENABLED == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: eval-baseline-results-${{ github.sha }}
+          path: backend/scripts/rag-eval/results/
+          if-no-files-found: ignore
+          retention-days: 90
           EVAL_AUTH_TOKEN: ${{ secrets.RAG_EVAL_AUTH_TOKEN }}
 
   # ========== 2. 构建 & 推送 Docker 镜像 ==========
@@ -127,7 +142,7 @@ jobs:
     needs: check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Check image name configuration
         run: |
@@ -137,7 +152,7 @@ jobs:
           fi
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       # ── Docker Hub 登录 ──
       - name: Login to Docker Hub
@@ -155,7 +170,7 @@ jobs:
       #     password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
 
       - name: Build and Push Docker Image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           push: true
@@ -172,7 +187,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Scan pushed image
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           format: table
@@ -189,10 +204,10 @@ jobs:
     needs: [check, build, security-scan]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Upload deployment manifests
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634 # v0.1.7
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
@@ -202,7 +217,7 @@ jobs:
           target: "/opt/wuli-elf/"
 
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}

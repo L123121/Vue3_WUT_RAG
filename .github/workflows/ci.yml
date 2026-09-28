@@ -36,10 +36,10 @@ jobs:
     name: Lint & Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20
           cache: "npm"
@@ -55,7 +55,7 @@ jobs:
       # 未命中会在用例内显式失败（rag-pipeline.e2e.test.js），不静默跳过
       - name: Cache embedding model
         id: model-cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .model-cache
           key: embedding-bge-small-zh-v1.5
@@ -83,6 +83,11 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      # 离线语料/数据集一致性门禁：数据集地面真值引用的 docId 必须能解析到
+      # 语料清单（防止改坏数据集后检索指标静默失真）。零网络依赖
+      - name: Dataset & manifest integrity
+        run: npm run eval:dataset-check
 
       - name: Audit production dependencies
         run: |

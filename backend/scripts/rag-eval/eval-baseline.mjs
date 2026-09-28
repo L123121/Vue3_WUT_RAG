@@ -274,9 +274,28 @@ async function main() {
 
   console.log(`\n[Baseline] 结果已保存: ${outputPath}`);
 
-  // 退出码：Recall@5 < 80% 视为回归
-  if (aggregate[`recall@5`] < 0.80) {
-    console.warn(`\n[Baseline] 警告: Recall@5 = ${(aggregate[`recall@5`] * 100).toFixed(1)}% < 80% 基线`);
+  // ─── 退出码门禁 ────────────────────────────────────────────
+  // Recall@5 是默认硬门禁；p95 延迟门禁通过 EVAL_MAX_P95_MS 显式开启
+  // （未设置不拦截，避免首次接入或环境抖动直接卡死部署）。
+  const failures = [];
+  const minRecall5 = Number.parseFloat(process.env.EVAL_MIN_RECALL5);
+  const recallThreshold = Number.isFinite(minRecall5) ? minRecall5 : 0.80;
+  if (aggregate[`recall@5`] < recallThreshold) {
+    failures.push(`Recall@5 = ${(aggregate[`recall@5`] * 100).toFixed(1)}% < 阈值 ${(recallThreshold * 100).toFixed(1)}%`);
+  }
+
+  const latencies = validResults.map((r) => r.latencyMs).filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+  const p95 = latencies.length ? latencies[Math.min(latencies.length - 1, Math.ceil(latencies.length * 0.95) - 1)] : 0;
+  const maxP95 = Number.parseFloat(process.env.EVAL_MAX_P95_MS);
+  if (Number.isFinite(maxP95) && maxP95 > 0 && p95 > maxP95) {
+    failures.push(`p95 延迟 = ${Math.round(p95)}ms > 阈值 ${maxP95}ms`);
+  }
+
+  console.log(`[Baseline] 门禁: Recall@5 阈值 ${(recallThreshold * 100).toFixed(1)}%` +
+    (Number.isFinite(maxP95) && maxP95 > 0 ? `，p95 阈值 ${maxP95}ms（实测 ${Math.round(p95)}ms）` : '，p95 门禁未启用'));
+
+  if (failures.length > 0) {
+    for (const line of failures) console.warn(`\n[Baseline] 门禁未通过: ${line}`);
     process.exit(1);
   }
 

@@ -127,7 +127,18 @@ defineExpose({ scrollToBottom, shouldAutoScroll });
       class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4"
       @scroll="handleScroll"
     >
-      <div v-for="(item, index) in messages" :key="item.id" :id="`msg-${item.id}`" :data-index="index">
+      <!-- content-visibility: 视口外的历史气泡跳过渲染与布局（含 Markdown 高亮/净化），
+           等效轻量虚拟化；contain-intrinsic-size 提供占位高度，滚动条不跳动。
+           当前流式气泡显式排除，保证逐帧高度更新不被跳过。 -->
+      <div
+        v-for="(item, index) in messages"
+        :key="item.id"
+        :id="`msg-${item.id}`"
+        :data-index="index"
+        :style="item.id === currentStreamingId
+          ? { containIntrinsicSize: 'auto 120px' }
+          : { contentVisibility: 'auto', containIntrinsicSize: 'auto 120px' }"
+      >
         <MessageBubble
           :message="item"
           :question-message="previousUserMessageById.get(item.id)"

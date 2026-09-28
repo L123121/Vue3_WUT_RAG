@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require('crypto');
+const { isSensitiveKey } = require('../../utils/sensitive-keys');
 
 function createTraceId(prefix = 'req') {
   const id = typeof crypto.randomUUID === 'function'
@@ -39,7 +40,9 @@ function sanitizeValue(value, maxLength = 300) {
   if (typeof value === 'object') {
     const sanitized = {};
     for (const [key, item] of Object.entries(value)) {
-      if (/key|token|secret|password|cookie|authorization/i.test(key)) continue;
+      // 敏感键策略与 run-event-log 回放共用同一份（utils/sensitive-keys.js），
+      // 此前两处正则漂移导致同一字段日志里隐藏、回放里明文
+      if (isSensitiveKey(key)) continue;
       sanitized[key] = sanitizeValue(item, 120);
     }
     return sanitized;

@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const config = require('../../config');
+const { isSensitiveKey } = require('../../utils/sensitive-keys');
 
 const RUN_ID_RE = /^run_[a-zA-Z0-9_.:-]{8,160}$/;
 const sanitizeRunId = (value) => {
@@ -19,7 +20,9 @@ const sanitizeValue = (value, depth = 0) => {
   if (typeof value === 'object') {
     const result = {};
     for (const [key, item] of Object.entries(value)) {
-      if (/token|secret|password|cookie|authorization|api.?key/i.test(key)) continue;
+      // 敏感键策略与日志共用同一份（utils/sensitive-keys.js）；取并集后
+      // 本文件比旧版多隐藏裸 key 字段（如 keyword），方向是更安全
+      if (isSensitiveKey(key)) continue;
       result[key] = sanitizeValue(item, depth + 1);
     }
     return result;

@@ -253,4 +253,54 @@ describe('useStreaming 状态机', () => {
     await expect(promise).rejects.toThrow('响应超时');
     expect(capturedOptions().signal.aborted).toBe(true);
   });
+
+  it('直答回答:decision 草稿在 done 时转正为正文,不丢失', async () => {
+    const store = setup();
+    const promise = api.sendMessage('你好');
+    const cb = capturedCallbacks();
+
+    // agent 决策阶段的思考文本(decision 标记),随后模型直接给出回答(无 tool_call)
+    cb.onChunk('思考中的草稿', { decision: true });
+    cb.onChunk('正式回答内容');
+    vi.advanceTimersToNextFrame();
+    // 非 decision 内容取代草稿进入正文
+    expect(msgText(store)).toBe('正式回答内容');
+
+    cb.onDone();
+    await promise;
+    expect(msgText(store)).toBe('正式回答内容');
+  });
+
+  it('纯直答(全程 decision 标记):done 时草稿整体转正为正文', async () => {
+    const store = setup();
+    const promise = api.sendMessage('你好');
+    const cb = capturedCallbacks();
+
+    cb.onChunk('直答第一段', { decision: true });
+    cb.onChunk('直答第二段', { decision: true });
+    expect(msgText(store)).toBe('');
+
+    cb.onDone();
+    await promise;
+    expect(msgText(store)).toBe('直答第一段直答第二段');
+    expect(api.decisionDraft.value).toBe('');
+  });
+
+  it('runsById 有界:终态 run 被回收,只保留最近 20 条', async () => {
+    const store = setup();
+    // 连续 25 次完整会话,超过 MAX_RETAINED_RUNS(20)
+    for (let i = 0; i < 25; i += 1) {
+      const promise = api.sendMessage(`问题 ${i}`);
+      const cb = capturedCallbacks();
+      cb.onChunk(`回答 ${i}`);
+      vi.advanceTimersToNextFrame();
+      cb.onDone();
+      await promise;
+    }
+
+    expect(Object.keys(api.runsById.value).length).toBe(20);
+    // 最近一次 run 仍在(便于调试/回放),最早的已被回收
+    const ids = Object.keys(api.runsById.value);
+    expect(store.conversations[0].messages.length).toBeGreaterThan(25);
+  });
 });
