@@ -51,6 +51,33 @@ jobs:
         run: npm ci
         working-directory: backend
 
+      # RAG 全链路 E2E 依赖本地 BGE 模型缓存；命中缓存则真实跑通，
+      # 未命中会在用例内显式失败（rag-pipeline.e2e.test.js），不静默跳过
+      - name: Cache embedding model
+        id: model-cache
+        uses: actions/cache@v4
+        with:
+          path: .model-cache
+          key: embedding-bge-small-zh-v1.5
+
+      # 缓存未命中时预热模型（首次约 90MB，结束后由 actions/cache 自动保存）
+      - name: Warm embedding model cache
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        working-directory: backend
+        run: |
+          node -e "
+            const path = require('path');
+            const { env, pipeline } = require('@huggingface/transformers');
+            const cacheDir = path.resolve('..', '.model-cache');
+            env.cacheDir = cacheDir;
+            env.localModelPath = cacheDir;
+            env.allowLocalModels = true;
+            env.allowRemoteModels = true;
+            pipeline('feature-extraction', 'Xenova/bge-small-zh-v1.5', { dtype: 'q8', cache_dir: cacheDir, local_files_only: false })
+              .then(() => console.log('embedding model cached'))
+              .catch((err) => { console.error('model warmup failed:', err.message); process.exit(1); });
+          "
+
       - name: Lint
         run: npm run lint:check
 

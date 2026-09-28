@@ -35,6 +35,14 @@ on:
       - ".github/workflows/deploy.yml"
   workflow_dispatch: # 支持手动触发
 
+# 并发控制：连续 push main 会并发触发部署，而回滚依赖「上一版镜像」快照
+# （PREVIOUS_IMAGE）。两条流水线同时跑会互相把对方的镜像当成上一版，
+# 回滚反而把现场改坏。这里串行化，并只保留最新一次（已在进行的不取消，
+# 避免部署到一半被中断留下半成品）。
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   # ─── 镜像仓库 ───
   # 在 GitHub 仓库 Settings → Secrets and variables → Actions → Variables 中配置 DOCKER_IMAGE_NAME
@@ -62,6 +70,31 @@ jobs:
       - name: Install backend dependencies
         run: npm ci
         working-directory: backend
+
+      # 与 ci.yml 相同的模型缓存：E2E 在 CI 缺缓存时显式失败而非跳过
+      - name: Cache embedding model
+        id: model-cache
+        uses: actions/cache@v4
+        with:
+          path: .model-cache
+          key: embedding-bge-small-zh-v1.5
+
+      - name: Warm embedding model cache
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        working-directory: backend
+        run: |
+          node -e "
+            const path = require('path');
+            const { env, pipeline } = require('@huggingface/transformers');
+            const cacheDir = path.resolve('..', '.model-cache');
+            env.cacheDir = cacheDir;
+            env.localModelPath = cacheDir;
+            env.allowLocalModels = true;
+            env.allowRemoteModels = true;
+            pipeline('feature-extraction', 'Xenova/bge-small-zh-v1.5', { dtype: 'q8', cache_dir: cacheDir, local_files_only: false })
+              .then(() => console.log('embedding model cached'))
+              .catch((err) => { console.error('model warmup failed:', err.message); process.exit(1); });
+          "
 
       - name: Lint
         run: npm run lint:check

@@ -11,6 +11,15 @@ initTracing();
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
+/**
+ * 反向代理信任：容器部署时请求经 nginx → express，未声明 trust proxy 时
+ * req.ip 恒为网关地址，express-rate-limit 会把所有客户端算成同一个 IP——
+ * 60 次/分钟的限制要么变成全局限流，要么被伪造 X-Forwarded-For 绕过。
+ * 默认只信任一层代理（nginx）；多级代理用 TRUST_PROXY_HOPS 覆盖。
+ */
+const trustProxyHops = parseInt(process.env.TRUST_PROXY_HOPS, 10);
+app.set('trust proxy', Number.isInteger(trustProxyHops) && trustProxyHops >= 0 ? trustProxyHops : 1);
+
 // 中间件 + 速率限制
 const { applyMiddleware } = require('./middleware');
 const chatLimiter = applyMiddleware(app);
@@ -50,7 +59,7 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
   const hasApi = !!config.ai.apiKey;
   logEvent('info', 'server_started', {
     url: `http://localhost:${PORT}`,
-    aiModel: config.ai.model || 'step-3.7-flash',
+    aiModel: config.ai.model || config.DEFAULT_AI_MODEL,
     mode: hasApi ? 'online' : 'mock',
     storage: 'SQLite（store.db，WAL）',
     vector: `Qdrant（${config.vectorStore.qdrantUrl}）`,

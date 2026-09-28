@@ -29,7 +29,7 @@ function applyRoutes(app, chatLimiter) {
       ai_service: {
         enabled: hasApiConfig,
         provider: 'StepFun (阶跃星辰)',
-        model: config.ai.model || 'step-3.7-flash',
+        model: config.ai.model || config.DEFAULT_AI_MODEL,
         status: hasApiConfig ? '配置正常' : '模拟模式',
       },
       storage: 'sqlite',

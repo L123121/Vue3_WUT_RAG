@@ -3,9 +3,11 @@
 const { AiService } = require("../llm/ai.service");
 const { RagService } = require("../rag/rag.service");
 const { MemoryService } = require("../memory/memory.service");
-const { IntentRouter, INTENT_TYPES, GREETING_PATTERN } = require("../agent/intent-router.service");
+const { IntentRouter, GREETING_PATTERN } = require("../agent/intent-router.service");
 const { AgentService } = require("../agent/agent.service");
 const { logEvent } = require("../observability/observability.service");
+const { INTENT_TYPES } = require("../agent/route-registry");
+const { emptyDraft, applyEvent, finalize } = require("../../utils/decision-draft");
 const config = require("../../config");
 
 class ConversationOrchestrator {
@@ -230,7 +232,7 @@ class ConversationOrchestrator {
       isMock: !!result.isMock,
       sources: [],
       context: "",
-      model: result.model || config.ai.model || "step-3.7-flash",
+      model: result.model || config.ai.model || config.DEFAULT_AI_MODEL,
     };
   }
 
@@ -305,29 +307,43 @@ class ConversationOrchestrator {
 
     if (prepared.route === "agent" && this.agentService.enabled) {
       let agentFailed = false;
-      // 决策草稿（decision 标记）被 tool_call 取代时不计入记忆存储的最终回答
-      let agentReply = "";
-      let agentDecisionDraft = "";
+      // 决策草稿（decision 标记）被 tool_call 取代时不计入记忆存储的最终回答；
+      // 状态机复用 utils/decision-draft，与控制器/agent 非流式路径同源
+      let draft = emptyDraft();
+      // agent 自己已经检索过知识库时，失败后再跑一遍完整 RAG 就是重复的
+      // 一次检索（成本翻倍且来源会重复）。记录是否已检索，决定要不要降级。
+      let agentAlreadyRetrieved = false;
       for await (const event of this.agentService.chatStream(message, prepared.history, context)) {
         if (event.type === "error") {
           agentFailed = true;
           logEvent("warn", "conversation_agent_stream_fallback", { error: event.error?.message });
           break;
         }
-        if (event.type === "content" && !event.done) {
-          if (event.decision) agentDecisionDraft += event.content || "";
-          else { agentReply += event.content || ""; agentDecisionDraft = ""; }
+        if (event.type === "tool_call" && event.tool_call?.name === "search_knowledge_base") {
+          agentAlreadyRetrieved = true;
         }
-        if (event.type === "tool_call") agentDecisionDraft = "";
+        if (event.type === "sources" && (event.sources || []).length > 0) {
+          agentAlreadyRetrieved = true;
+        }
+        draft = applyEvent(draft, event);
         yield event.type === "trace" ? { ...event, channel: "agent" } : event;
       }
       if (!agentFailed) {
-        this._saveMemory(context.userId, message, agentReply + agentDecisionDraft);
+        this._saveMemory(context.userId, message, finalize(draft).reply);
         return;
       }
       fullReply = "";
       prepared.routing = this._agentFallbackRouting(prepared.routing);
       yield { type: "intent", intent: this._intentResult(prepared.routing) };
+      if (agentAlreadyRetrieved) {
+        // 已经检索过仍失败：再跑一遍 RAG 只会重复，直接以已输出内容收尾
+        logEvent("warn", "conversation_agent_fallback_skipped", {
+          reason: "agent 已检索过知识库，跳过重复的 RAG 降级",
+        });
+        yield { type: "content", content: "", done: true };
+        this._saveMemory(context.userId, message, finalize(draft).reply);
+        return;
+      }
     }
 
     for await (const event of this.ragService.chatStream(message, prepared.history, context)) {

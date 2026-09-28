@@ -57,7 +57,7 @@ async function drainChat(svc, message, history = [], options = {}) {
       const aiLatency = Date.now() - aiStart;
       metrics.recordLatency('ai', aiLatency);
       svc._recordTraceStage(tracer, 'llm', aiStart, true, {
-        model: config.ai.model || 'step-3.7-flash',
+        model: config.ai.model || config.DEFAULT_AI_MODEL,
         isMock: !!result.isMock,
         outputChars: (result.content || '').length,
         usage: result.usage || null,
@@ -71,11 +71,11 @@ async function drainChat(svc, message, history = [], options = {}) {
         isMock: result.isMock,
         sources: [],
         context: '',
-        model: config.ai.model || 'step-3.7-flash',
+        model: config.ai.model || config.DEFAULT_AI_MODEL,
         usage: result.usage || null,
       }, { usedRag: false, usedParentChild: false });
     } catch (llmErr) {
-      svc._recordTraceStage(tracer, 'llm', aiStart, false, { model: config.ai.model || 'step-3.7-flash' }, llmErr);
+      svc._recordTraceStage(tracer, 'llm', aiStart, false, { model: config.ai.model || config.DEFAULT_AI_MODEL }, llmErr);
       svc._recordTraceStage(tracer, 'total', totalStart, false, { usedRag: false }, llmErr);
       tracer.markError(llmErr);
       tracer.finish({ usedRag: false, usedParentChild: false });
@@ -99,7 +99,7 @@ async function drainChat(svc, message, history = [], options = {}) {
     sources,
     context,
     topChunks,
-    model: config.ai.model || 'step-3.7-flash',
+    model: config.ai.model || config.DEFAULT_AI_MODEL,
     usage,
     questionType,
     rewrittenQuery,

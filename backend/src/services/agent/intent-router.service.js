@@ -25,21 +25,23 @@ const { logEvent } = require("../observability/observability.service");
  *      fastRoute 零成本路由常开。
  */
 
-// 意图类型定义
-const INTENT_TYPES = {
-  KNOWLEDGE_QUERY: "knowledge_query", // 校内知识问答 → rag
-  GENERAL_CHAT: "general_chat",       // 普通闲聊 → chat
-  COMPLEX_TASK: "complex_task",       // 多步/复合任务 → agent
-  CALCULATION_TASK: "calculation_task", // 明确数学计算 → agent/calculate
-};
+// 意图类型与路由表收敛到 route-registry（唯一事实来源），
+// 此前这里与 jev-decision 的 ROUTE_TO_INTENT 是两份反向的字面量表，
+// 任一侧改名都会静默产生 undefined 路由。
+const {
+  INTENT_TYPES,
+  ROUTES,
+  routeOfIntent,
+} = require("./route-registry");
 
-// 意图路由表：意图类型 → { route, description }
-const ROUTE_MAP = {
-  [INTENT_TYPES.KNOWLEDGE_QUERY]: { route: "rag", description: "知识库检索" },
-  [INTENT_TYPES.GENERAL_CHAT]: { route: "chat", description: "普通对话" },
-  [INTENT_TYPES.COMPLEX_TASK]: { route: "agent", description: "多步任务" },
-  [INTENT_TYPES.CALCULATION_TASK]: { route: "agent", description: "数学计算" },
-};
+const ROUTE_MAP = Object.freeze(
+  Object.fromEntries(
+    Object.keys(INTENT_TYPES).map((key) => {
+      const intent = INTENT_TYPES[key];
+      return [intent, { route: routeOfIntent(intent), description: ROUTES[routeOfIntent(intent)].description }];
+    })
+  )
+);
 
 const KNOWLEDGE_PATTERNS = [
   /(知识库|文档库|资料库|根据.{0,8}(文档|资料|手册|指南|笔记|题库)|(?:查找|查询|检索|搜索).{0,8}(文档|资料|知识库)|(?:文档|资料|手册|指南|笔记|题库).{0,8}(?:怎么说|写了什么|有没有|在哪里|原文|来源))/,

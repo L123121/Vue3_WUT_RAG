@@ -25,6 +25,11 @@ import {
   hydrateMessageFragments,
 } from '../utils/messageFragments.js';
 import { createRunBuffer } from './streaming/runBuffer.js';
+import {
+  MAX_RETAINED_RUNS,
+  STREAM_STALL_GRACE_MS,
+  STREAM_STALL_TIMEOUT,
+} from '../utils/streamConstants.js';
 import { createMessagePatchHandlers } from './streaming/messagePatches.js';
 import {
   buildHistory,
@@ -32,7 +37,6 @@ import {
   createFirstFrameRecorder,
 } from './streaming/streamHelpers.js';
 
-const STREAM_STALL_TIMEOUT = 60000;
 const TERMINAL_RUN_STATUSES = new Set(['completed', 'failed', 'aborted']);
 
 const isTerminalRun = (status) => TERMINAL_RUN_STATUSES.has(status);
@@ -113,6 +117,22 @@ export function useStreaming() {
     const run = getRun(runId);
     return activeRunId.value === runId && !!run && !isTerminalRun(run.status);
   };
+  /**
+   * runsById 此前只增不减：每条 run（含 conversationId/消息 id/时间戳）都被
+   * 深层响应式代理，长会话下会持续占用内存且永不释放。run 状态只在流式期间
+   * 与"最近几次"有意义，终态后回收；按 startedAt 保留最近 MAX_RETAINED_RUNS 条，
+   * 保证 abortRun/finishRun 的幂等判定（getRun 返回 null）仍然成立。
+   */
+  const pruneFinishedRuns = () => {
+    const runs = Object.entries(runsById.value);
+    if (runs.length <= MAX_RETAINED_RUNS) return;
+    runs
+      .filter(([, run]) => isTerminalRun(run.status))
+      .sort(([, a], [, b]) => (a.startedAt || 0) - (b.startedAt || 0))
+      .slice(0, Math.max(0, runs.length - MAX_RETAINED_RUNS))
+      .forEach(([id]) => { delete runsById.value[id]; });
+  };
+
   const setRunDecisionDraft = (runId, value) => {
     const run = patchRun(runId, { decisionDraft: value });
     if (run && activeRunId.value === runId) decisionDraft.value = value;
@@ -134,6 +154,7 @@ export function useStreaming() {
       reconnectAttempt.value = 0;
       decisionDraft.value = '';
     }
+    pruneFinishedRuns();
     return true;
   };
 
@@ -365,7 +386,7 @@ export function useStreaming() {
           finishRun(runId, 'failed');
           try { abortController.abort(); } catch { /* 已清理 */ }
           reject(new Error('响应超时，请检查网络连接后重试'));
-        }, STREAM_STALL_TIMEOUT + 5000);
+        }, STREAM_STALL_TIMEOUT + STREAM_STALL_GRACE_MS);
       };
       const markResolved = () => { resolved = true; if (safetyTimer) clearTimeout(safetyTimer); };
       armSafetyTimeout();

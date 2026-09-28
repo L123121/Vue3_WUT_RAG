@@ -5,10 +5,10 @@ const INITIAL_RETRY_DELAY = 1000;
 const MAX_RETRY_DELAY = 30000;
 const HEARTBEAT_INTERVAL = 30000;
 const HEARTBEAT_TIMEOUT = 10000;
-const STREAM_STALL_TIMEOUT = 60000; // 60s without data = stalled
 const RESPONSE_HEADERS_TIMEOUT = 30000; // 建连后迟迟不出响应头的兜底（响应后的慢数据由 stallCheck 负责）
 
 import { fetchOpts } from './client.js';
+import { STREAM_STALL_TIMEOUT } from '../utils/streamConstants.js';
 import {
   isRunEventV1,
   RUN_EVENT_TYPES,

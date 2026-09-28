@@ -18,12 +18,17 @@ if (!process.env.VITEST) {
   }
 }
 
+// 默认模型名（单一事实来源）：此前 'step-3.7-flash' 作为兜底字面量散落在
+// 10+ 个文件里，改默认模型要全局搜替换，漏一处就会出现"同一进程两种模型口径"
+const DEFAULT_AI_MODEL = 'step-3.7-flash';
+
 module.exports = {
+  DEFAULT_AI_MODEL,
   // AI 模型服务（OpenAI-compatible API）
   ai: {
     apiKey: process.env.AI_API_KEY,
     baseUrl: aiBaseUrl,
-    model: process.env.AI_MODEL || 'step-3.7-flash',
+    model: process.env.AI_MODEL || DEFAULT_AI_MODEL,
     maxTokens: 4000,
     temperature: 0.7,
     timeout: 60000,

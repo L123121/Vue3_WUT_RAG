@@ -7,6 +7,35 @@ const { executeToolDetailed, getToolSchemas, getToolNames } = require("./agent-t
 const { spillToolResult, compactHistoricalToolResults } = require("../conversation/context-compaction.service");
 const config = require("../../config");
 const { logEvent } = require('../observability/observability.service');
+const {
+  emptyDraft,
+  finalize,
+  applyEvent,
+} = require("../../utils/decision-draft");
+const { mergeSources } = require("../../utils/merge-sources");
+
+/**
+ * 生成失败时的收尾策略（单一实现）：
+ * 已经流出内容就无法回退（半截流比错误更糟），只能保留已输出内容并礼貌收尾；
+ * 一个字都没流过才通知上层降级到 RAG。此前这段判断在 agent.service 的两个
+ * catch 与 rag-generation.service 里各写了一份。
+ *
+ * @param {object} trace 链路 trace（会被 yield 出去供前端展示）
+ * @param {string} streamedText 已流出的内容
+ * @param {{message:string, cause?:Error}} failure 失败信息
+ * @returns {Array<object>} 需要 yield 的事件序列
+ */
+function failureOrCloseEvents(trace, streamedText, { message, cause = null }) {
+  if (streamedText) {
+    // 已有部分内容流出，无法回退 → 保留已输出内容，礼貌收尾
+    return [
+      { type: "trace", trace },
+      { type: "content", content: "", done: true },
+    ];
+  }
+  // 尚未输出任何内容 → 通知控制器降级 RAG 链路（而非误导性的兜底文案）
+  return [{ type: "error", error: new AgentDecisionError(message, cause) }];
+}
 
 function addUsage(total, usage) {
   if (!usage || typeof usage !== 'object') return total;
@@ -105,21 +134,6 @@ function stableStringify(value) {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
   const keys = Object.keys(value).sort();
   return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(",")}}`;
-}
-
-/**
- * 合并 sources（按 docId/title 去重），保持出现顺序
- */
-function mergeSources(target, incoming) {
-  const seen = new Set(target.map((s) => s.docId || s.title || JSON.stringify(s)));
-  for (const s of incoming || []) {
-    const key = s.docId || s.title || JSON.stringify(s);
-    if (!seen.has(key)) {
-      seen.add(key);
-      target.push(s);
-    }
-  }
-  return target;
 }
 
 /**
@@ -334,13 +348,11 @@ class AgentService {
         trace.finishReason = "error";
         trace.totalMs = Date.now() - totalStart;
         persistTrace(trace);
-        if (!streamedText) {
-          // 尚未输出任何内容 → 通知控制器降级 RAG 链路（而非误导性的兜底文案）
-          yield { type: "error", error: new AgentDecisionError(`agent 决策失败: ${err.message}`, err) };
-        } else {
-          // 已有部分内容流出，无法回退 → 保留已输出内容，礼貌收尾
-          yield { type: "trace", trace };
-          yield { type: "content", content: "", done: true };
+        for (const event of failureOrCloseEvents(trace, streamedText, {
+          message: `agent 决策失败: ${err.message}`,
+          cause: err,
+        })) {
+          yield event;
         }
         return;
       }
@@ -529,13 +541,11 @@ class AgentService {
       trace.finishReason = "error";
       trace.totalMs = Date.now() - totalStart;
       persistTrace(trace);
-      if (!finalStreamed) {
-        // 尚未输出任何内容 → 通知控制器降级 RAG 链路
-        yield { type: "error", error: new AgentDecisionError(`agent 收尾生成失败: ${err.message}`, err) };
-      } else {
-        // 已有部分内容流出，无法回退 → 保留已输出内容，礼貌收尾
-        yield { type: "trace", trace };
-        yield { type: "content", content: "", done: true };
+      for (const event of failureOrCloseEvents(trace, finalStreamed ? "x" : "", {
+        message: `agent 收尾生成失败: ${err.message}`,
+        cause: err,
+      })) {
+        yield event;
       }
     }
   }
@@ -545,26 +555,17 @@ class AgentService {
    * AgentDecisionError 原样上抛，由控制器降级 RAG 链路
    */
   async chat(message, history = [], options = {}) {
-    let reply = "";
     // 决策阶段内容带 decision 标记实时透传；若随后出现 tool_call，说明这段是
-    // 被废弃的"思考草稿"（前端也会丢弃），不能计入最终 reply
-    let pendingDecisionText = "";
+    // 被废弃的"思考草稿"（前端也会丢弃），不能计入最终 reply。
+    // 状态机走 utils/decision-draft 的单一实现，避免与控制器/编排层各写一份。
+    let draft = emptyDraft();
     const toolNames = [];
     let sources = [];
     let trace = null;
 
     for await (const ev of this.chatStream(message, history, options)) {
-      if (ev.type === "content") {
-        if (!ev.done) {
-          if (ev.decision) {
-            pendingDecisionText += ev.content || "";
-          } else {
-            reply += ev.content || "";
-            pendingDecisionText = "";
-          }
-        }
-      } else if (ev.type === "tool_call") {
-        pendingDecisionText = ""; // 草稿被工具调用取代
+      draft = applyEvent(draft, ev);
+      if (ev.type === "tool_call") {
         if (ev.tool_call?.name) toolNames.push(ev.tool_call.name);
       } else if (ev.type === "sources") {
         sources = ev.sources || [];
@@ -575,12 +576,12 @@ class AgentService {
       }
     }
     // 直接回答路径：内容全部以 decision 标记透传，收尾时即为最终回答
-    reply += pendingDecisionText;
+    const { reply } = finalize(draft);
 
     return {
       reply: reply || "抱歉，我没有理解您的问题。",
       isMock: false,
-      model: config.ai.model || "step-3.7-flash",
+      model: config.ai.model || config.DEFAULT_AI_MODEL,
       sources,
       trace,
       tool: {

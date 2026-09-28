@@ -9,9 +9,6 @@ import {
   saveConversationMessages as apiSaveMessages,
 } from '../api/conversations.js';
 import { useAuthStore } from './auth.store.js';
-// 顶层 import 但只在函数体内调用（惰性）：与 message.store → useStreaming → 本模块
-// 存在模块循环，运行时调用时各模块均已初始化完毕
-import { useMessageStore } from './message.store.js';
 import { reportError } from '../utils/errorHandler.js';
 import {
   normalizeMessages,
@@ -71,19 +68,23 @@ export const useConversationStore = defineStore('conversation', () => {
 
   const isLocalSession = (id) => !id || id === 'local' || id.startsWith('local_');
 
-  // 惰性获取消息 store（conversation ↔ message 存在模块循环，运行时各模块已就绪）
-  const tryMessageStore = () => {
-    try { return useMessageStore(); } catch { return null; }
+  // ========== 流式守护（依赖反转） ==========
+  // 此处不直接 import message.store（那会形成 conversation → message →
+  // useStreaming → conversation 的模块循环，此前靠惰性调用 + try/catch 兜底）。
+  // 改为由 message.store 初始化时调用 registerStreamGuard 注册"流式进行中"
+  // 的判定与中止能力；未注册（message store 尚未实例化）等价于"当前无流式"，
+  // 与原来 try/catch 返回 null 的语义一致。
+  let streamGuard = null;
+  const registerStreamGuard = (guard) => {
+    streamGuard = guard || null;
   };
 
   // 有流式进行中时按需中止：
   // - 切换会话：旧流若指向其他会话，中止以避免旧流继续写旧会话、currentStreamingId 错配
   // - 删除会话：流式目标正是被删会话时中止
   const abortStreamFor = (condition) => {
-    const messageStore = tryMessageStore();
-    if (messageStore?.isLoading && condition(messageStore)) {
-      messageStore.abortCurrentRequest();
-    }
+    if (!streamGuard?.isLoading()) return;
+    if (condition(streamGuard)) streamGuard.abortCurrentRequest();
   };
 
   /**
@@ -402,12 +403,8 @@ export const useConversationStore = defineStore('conversation', () => {
   // 整个会话（内容线性增长、每次都是立即过期的中间态）；收尾（done/error/abort）
   // 会以 immediate=true 补一次权威同步。其他会话的变更不受影响，照常防抖同步
   const _isStreamingConversation = (conv) => {
-    try {
-      const streamingConvId = useMessageStore().activeStreamingConversationId;
-      return !!streamingConvId && (!conv || conv.id === streamingConvId);
-    } catch {
-      return false; // store 未就绪按非流式处理
-    }
+    const streamingConvId = streamGuard?.activeStreamingConversationId?.();
+    return !!streamingConvId && (!conv || conv.id === streamingConvId);
   };
 
   const scheduleSaveCache = (immediate = false, targetConvId = null) => {
@@ -499,6 +496,7 @@ export const useConversationStore = defineStore('conversation', () => {
     getLastMessagePreview,
     isLocalSession,
     isBackendAvailable,
+    registerStreamGuard,
     scheduleSaveCache,
     flushPendingChanges,
     resetConversationState,

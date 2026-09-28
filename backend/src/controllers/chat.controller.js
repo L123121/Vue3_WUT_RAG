@@ -11,6 +11,7 @@ const {
   writeStreamEvent,
 } = require("../utils/sse-events");
 const { logEvent } = require("../services/observability/observability.service");
+const { emptyDraft, applyEvent, finalize } = require("../utils/decision-draft");
 
 function createChatHandlers(conversationOrchestrator) {
   const streamHandler = async (req, res, next) => {
@@ -53,23 +54,22 @@ function createChatHandlers(conversationOrchestrator) {
       writeRunStarted(res, streamContext, { conversationId: context.conversationId });
 
       const audit = { answer: "", sources: [], traceId: req.traceId };
-      // agent 决策草稿：tool_call 出现即被废弃，不计入审计答案
-      let decisionDraft = "";
+      // agent 决策草稿：tool_call 出现即被废弃，不计入审计答案。
+      // 状态机复用 utils/decision-draft，与 agent/编排层同源（此前三处各写一份）
+      let draft = emptyDraft();
       for await (const event of conversationOrchestrator.chatStream(message, history || [], context)) {
-        if (event.type === "content" && !event.done) {
-          if (event.decision) decisionDraft += event.content || "";
-          else { audit.answer += event.content || ""; decisionDraft = ""; }
-        }
-        if (event.type === "tool_call") decisionDraft = "";
+        draft = applyEvent(draft, event);
         if (event.type === "sources") audit.sources = event.sources || [];
         if (event.type === "trace" && event.trace?.traceId) audit.traceId = event.trace.traceId;
         writeStreamEvent(res, event, streamContext);
       }
+      const { reply: finalAnswer } = finalize(draft);
+      audit.answer = finalAnswer;
 
       writeRunCompleted(res, streamContext);
       void recordAudit({
         question: message,
-        answer: audit.answer || decisionDraft,
+        answer: audit.answer,
         sources: audit.sources,
         traceId: audit.traceId,
         userId: req.userId,

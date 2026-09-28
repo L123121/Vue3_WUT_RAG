@@ -64,7 +64,30 @@ describe('quota.middleware', () => {
     const reqChat = { path: '/api/chat', userId: 'u1' };
     reserveSpy.mockResolvedValue({ ok: true, usage: { used: 1, limit: 100 } });
     await quotaMiddleware(reqChat, createResponse(), vi.fn());
-    expect(reserveSpy).toHaveBeenCalledWith('u1');
+    expect(reserveSpy).toHaveBeenCalledWith('u1', '');
+  });
+
+  it('匿名请求把客户端 IP 传给配额服务用于分桶（不再是全局共享桶）', async () => {
+    const reserveSpy = vi.spyOn(quotaService, 'reserve').mockResolvedValue({ ok: true, usage: { used: 1, limit: 20 } });
+    const releaseSpy = vi.spyOn(quotaService, 'release').mockResolvedValue({ used: 0, limit: 20 });
+    const req = { path: '/api/chat', userId: null, ip: '203.0.113.9' };
+    const res = createResponse(500);
+
+    await quotaMiddleware(req, res, vi.fn());
+
+    expect(reserveSpy).toHaveBeenCalledWith(null, '203.0.113.9');
+    res.emit('finish');
+    await flush();
+    expect(releaseSpy).toHaveBeenCalledWith(null, '203.0.113.9');
+  });
+
+  it('匿名请求缺少 ip 时回退 socket.remoteAddress，仍不落到全局共享桶之外', async () => {
+    const reserveSpy = vi.spyOn(quotaService, 'reserve').mockResolvedValue({ ok: true, usage: { used: 1, limit: 20 } });
+    const req = { path: '/api/chat', userId: null, socket: { remoteAddress: '198.51.100.7' } };
+
+    await quotaMiddleware(req, createResponse(200), vi.fn());
+
+    expect(reserveSpy).toHaveBeenCalledWith(null, '198.51.100.7');
   });
 
   it('静态资源路径跳过配额检查', () => {
@@ -84,7 +107,7 @@ describe('quota.middleware', () => {
 
     await quotaMiddleware(req, res, next);
 
-    expect(reserveSpy).toHaveBeenCalledWith('u1');
+    expect(reserveSpy).toHaveBeenCalledWith('u1', '');
     expect(res.status).toHaveBeenCalledWith(429);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ success: false, error: '今日配额已用完，请明天再试' }));
     expect(next).not.toHaveBeenCalled();
@@ -99,7 +122,7 @@ describe('quota.middleware', () => {
 
     await quotaMiddleware(req, res, next);
 
-    expect(reserveSpy).toHaveBeenCalledWith('u1');
+    expect(reserveSpy).toHaveBeenCalledWith('u1', '');
     expect(reserveSpy.mock.invocationCallOrder[0]).toBeLessThan(next.mock.invocationCallOrder[0]);
     expect(next).toHaveBeenCalled();
     res.emit('finish');
@@ -118,7 +141,7 @@ describe('quota.middleware', () => {
     await flush();
 
     expect(releaseSpy).toHaveBeenCalledOnce();
-    expect(releaseSpy).toHaveBeenCalledWith('u1');
+    expect(releaseSpy).toHaveBeenCalledWith('u1', '');
   });
 
   it('连接在 finish 前关闭时回滚且只回滚一次', async () => {

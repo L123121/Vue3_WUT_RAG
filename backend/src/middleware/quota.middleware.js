@@ -3,6 +3,9 @@
 const quotaService = require("../services/auth/quota.service");
 const { logEvent } = require('../services/observability/observability.service');
 
+// 匿名用户按客户端 IP 分桶（app.js 已声明 trust proxy，取到的才是真实来源 IP）
+const clientIpOf = (req) => req.ip || req.socket?.remoteAddress || '';
+
 /**
  * 用户级配额中间件
  * 在请求处理前原子预占配额，超限时返回 429。
@@ -34,8 +37,9 @@ async function quotaMiddleware(req, res, next) {
   if (req.path.startsWith("/assets/")) return next();
   if (req.path.startsWith("/uploads/")) return next();
 
+  const clientIp = clientIpOf(req);
   try {
-    const result = await quotaService.reserve(req.userId);
+    const result = await quotaService.reserve(req.userId, clientIp);
     if (!result.ok) {
       return res.status(429).json({
         success: false,
@@ -46,7 +50,7 @@ async function quotaMiddleware(req, res, next) {
 
     let settled = false;
     const releaseReservation = () => {
-      quotaService.release(req.userId).catch((err) => {
+      quotaService.release(req.userId, clientIp).catch((err) => {
         logEvent('error', 'quota_rollback_failed', { error: err.message });
       });
     };

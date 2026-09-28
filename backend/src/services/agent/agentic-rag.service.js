@@ -4,6 +4,7 @@ const { AiService } = require("../llm/ai.service");
 const { RagService } = require("../rag/rag.service");
 const config = require("../../config");
 const { logEvent } = require('../observability/observability.service');
+const { mergeSources } = require("../../utils/merge-sources");
 
 const REWRITE_PROMPT = `你是校园知识库检索查询改写器。
 
@@ -18,17 +19,6 @@ const REWRITE_PROMPT = `你是校园知识库检索查询改写器。
 原问题：{question}
 上一轮查询：{query}
 检索摘要：{summary}`;
-
-function mergeSources(target, incoming) {
-  const seen = new Set(target.map((source) => source.docId || source.title || JSON.stringify(source)));
-  for (const source of incoming || []) {
-    const key = source.docId || source.title || JSON.stringify(source);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    target.push(source);
-  }
-  return target;
-}
 
 function parseRewrite(content, previousQuery) {
   const match = String(content || "").match(/\{[\s\S]*\}/);

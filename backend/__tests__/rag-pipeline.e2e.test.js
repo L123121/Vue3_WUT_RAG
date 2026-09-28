@@ -17,13 +17,24 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const fs = require('fs');
 const path = require('path');
 
-// 真实 ONNX 用例依赖本地模型缓存（.model-cache）。缓存缺失（全新环境/CI 未预热）时
-// embedding 加载会失败并导致整组断言误报，这里显式 skip 而不是让用例挂掉。
+// 真实 ONNX 用例依赖本地模型缓存（.model-cache）。缓存缺失时 embedding 加载
+// 会失败并导致整组断言误报：
+// - 本地开发：skip（避免要求每个开发者都下载模型）
+// - CI：显式失败 —— describe.skip 会让这条唯一的全链路契约"永远绿但从未验证"，
+//   CI 里配置了模型缓存（ci.yml 的 actions/cache），缺失说明缓存配置坏了，
+//   静默跳过只会掩盖问题。
 const EMBEDDING_ONNX_PATH = path.resolve(
   __dirname,
   '../../.model-cache/Xenova/bge-small-zh-v1.5/onnx/model_quantized.onnx'
 );
 const hasEmbeddingCache = fs.existsSync(EMBEDDING_ONNX_PATH);
+if (!hasEmbeddingCache && process.env.CI) {
+  throw new Error(
+    `CI 环境缺少 E2E 前置条件：未找到本地 embedding 模型缓存（${EMBEDDING_ONNX_PATH}）。` +
+    '请检查 ci.yml 的 actions/cache 配置（key: embedding-bge-small-zh-v1.5），' +
+    '不要用跳过测试来掩盖这个问题。'
+  );
+}
 const describeE2E = hasEmbeddingCache ? describe : describe.skip;
 
 // ─── Reranker Service Mock ────────────────────────────────────

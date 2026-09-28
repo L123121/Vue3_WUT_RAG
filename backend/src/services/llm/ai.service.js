@@ -59,7 +59,7 @@ class AiService {
     return {
       apiKey: cfg.apiKey || '',
       baseUrl,
-      model: cfg.model || 'step-3.7-flash',
+      model: cfg.model || config.DEFAULT_AI_MODEL,
       maxTokens: cfg.maxTokens || 4000,
       temperature: cfg.temperature || 0.7,
       timeout: cfg.timeout || 60000,

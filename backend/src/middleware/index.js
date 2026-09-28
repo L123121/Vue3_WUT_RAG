@@ -65,6 +65,11 @@ function applyMiddleware(app) {
     credentials: true,
   }));
 
+  // CSRF 防护：cookie 鉴权 + credentials:true 的前提下，仅靠 SameSite 不够，
+  // 这里对非安全方法再校验一次 Origin/Referer 是否落在与 CORS 相同的白名单
+  const { createCsrfMiddleware } = require('./csrf.middleware');
+  app.use(createCsrfMiddleware({ allowedOrigins: corsOrigin }));
+
   // Cookie 解析（JWT httpOnly cookie 必需）
   app.use(cookieParser());
 

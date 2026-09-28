@@ -36,7 +36,7 @@ async function generateAnswer(svc, { message, history, pipeline, tracer, options
   let reply = '';
   let aiLatency = 0;
   let llmUsage = null;
-  let llmModel = config.ai.model || 'step-3.7-flash';
+  let llmModel = config.ai.model || config.DEFAULT_AI_MODEL;
   let processCard = null;
   if (pipeline.context) {
     const aiStart = Date.now();
@@ -45,7 +45,7 @@ async function generateAnswer(svc, { message, history, pipeline, tracer, options
       const llmResult = await svc.aiService.getCompletion(prompt, history, options);
       aiLatency = Date.now() - aiStart;
       svc._recordTraceStage(tracer, 'llm', aiStart, true, {
-        model: config.ai.model || 'step-3.7-flash',
+        model: config.ai.model || config.DEFAULT_AI_MODEL,
         isMock: !!llmResult.isMock,
         outputChars: (llmResult.content || '').length,
         usage: llmResult.usage || null,
@@ -55,7 +55,7 @@ async function generateAnswer(svc, { message, history, pipeline, tracer, options
       llmModel = llmResult.model || llmModel;
       if (isProcess) processCard = svc.parseProcessCard(reply);
     } catch (err) {
-      aiLatency = svc._recordTraceStage(tracer, 'llm', aiStart, false, { model: config.ai.model || 'step-3.7-flash' }, err);
+      aiLatency = svc._recordTraceStage(tracer, 'llm', aiStart, false, { model: config.ai.model || config.DEFAULT_AI_MODEL }, err);
       logEvent('warn', 'rag_generation_failed', { error: err.message });
       reply = svc._buildNoReliableSourcesReply();
     }
@@ -94,7 +94,7 @@ async function* streamAnswer(svc, { message, history, options, pipeline, tracer,
       if (chunk.done) {
         metrics.recordLatency('ai', Date.now() - aiStart);
         svc._recordTraceStage(tracer, 'llm', aiStart, true, {
-          model: config.ai.model || 'step-3.7-flash',
+          model: config.ai.model || config.DEFAULT_AI_MODEL,
           stream: true,
           outputChars,
           usage: chunk.usage || null,
@@ -159,7 +159,7 @@ async function* streamAnswer(svc, { message, history, options, pipeline, tracer,
   } catch (err) {
     if (err.code === 'INCOMPLETE_STREAM') throw err;
     tracer?.markFallback('rag_pipeline_error');
-    svc._recordTraceStage(tracer, 'llm', aiStart, false, { model: config.ai.model || 'step-3.7-flash' }, err);
+    svc._recordTraceStage(tracer, 'llm', aiStart, false, { model: config.ai.model || config.DEFAULT_AI_MODEL }, err);
     logEvent('warn', 'rag_stream_fallback', { error: err.message });
     if (fullReply) {
       // 已输出部分内容：降级重发会让用户看到 "半截 RAG 回答 + 完整纯 LLM 回答" 拼接。
@@ -191,7 +191,7 @@ async function* streamAnswer(svc, { message, history, options, pipeline, tracer,
       if (chunk.done) {
         metrics.recordLatency('ai', Date.now() - aiStart2);
         svc._recordTraceStage(tracer, 'llm', aiStart2, true, {
-          model: config.ai.model || 'step-3.7-flash',
+          model: config.ai.model || config.DEFAULT_AI_MODEL,
           stream: true,
           outputChars: fallbackOutputChars,
           usage: chunk.usage || null,
@@ -211,7 +211,7 @@ async function* streamAnswer(svc, { message, history, options, pipeline, tracer,
       yield { type: 'content', content: chunk.content, done: false };
     }
   } catch (err) {
-    svc._recordTraceStage(tracer, 'llm', aiStart2, false, { model: config.ai.model || 'step-3.7-flash', stream: true }, err);
+    svc._recordTraceStage(tracer, 'llm', aiStart2, false, { model: config.ai.model || config.DEFAULT_AI_MODEL, stream: true }, err);
     svc._recordTraceStage(tracer, 'total', totalStart, false, { usedRag: false }, err);
     tracer.markError(err);
     tracer.finish({ usedRag: false, usedParentChild: false });

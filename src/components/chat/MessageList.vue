@@ -3,7 +3,6 @@ import { ref, watch, nextTick, onMounted, computed } from 'vue';
 // 改用普通滚动容器，避免 DynamicScroller 虚拟滚动导致的流式跳动
 import { RefreshCw } from 'lucide-vue-next';
 import { useMessageStore } from '../../stores/message.store.js';
-import { getMessageFragmentSignature } from '../../utils/messageFragments.js';
 import MessageBubble from './MessageBubble.vue';
 
 const props = defineProps({
@@ -80,17 +79,31 @@ watch(() => props.messages.length, () => {
   scrollToBottom();
 });
 
-// 流式内容变化时自动滚底 + 通知 DynamicScroller 重新计算高度
+// 流式内容变化时自动滚底。
+// 此前用 getMessageFragmentSignature 做变更检测——它内部对 ragTrace/toolCalls
+// 等对象做完整 JSON.stringify 指纹，流式期间每帧都要执行一次。滚底只需要
+// 感知"会影响高度的变化"，这里改用各 fragment 的计数类字段拼便宜签名。
+const cheapLayoutSignature = (msg) => {
+  if (!msg) return '0';
+  return [
+    msg.text?.length || 0,
+    msg.sources?.length || 0,
+    msg.toolCalls?.length || 0,
+    msg.toolResults?.length || 0,
+    msg.followups?.length || 0,
+    msg.processCard?.steps?.length || 0,
+    msg.grounding?.totalSentences ?? 0,
+    msg.usage?.total_tokens ?? 0,
+    msg.ragTrace?.rounds ?? 0,
+  ].join(':');
+};
+
 watch(() => {
   if (props.currentStreamingId) {
     const msg = props.messages.find((item) => item.id === props.currentStreamingId);
-    return [
-      msg?.text?.length || 0,
-      msg?.sources?.length || 0,
-      getMessageFragmentSignature(msg),
-    ];
+    return cheapLayoutSignature(msg);
   }
-  return [0, 0, ''];
+  return '';
 }, () => {
   scrollToBottom();
 });
@@ -108,6 +121,9 @@ defineExpose({ scrollToBottom, shouldAutoScroll });
     <div
       v-if="messages.length > 0"
       ref="scrollerRef"
+      role="log"
+      aria-live="polite"
+      aria-label="聊天消息"
       class="flex-1 min-h-0 overflow-y-auto p-4 space-y-4"
       @scroll="handleScroll"
     >

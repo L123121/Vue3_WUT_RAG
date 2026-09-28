@@ -11,13 +11,13 @@ const ROUTE_DEFINITIONS = Object.freeze({
   agent: '需要多步规划、综合比较或工具协作的复杂任务',
 });
 
-const ROUTE_TO_INTENT = Object.freeze({
-  chat: 'general_chat',
-  rag: 'knowledge_query',
-  agent: 'complex_task',
-});
+const { intentOfRoute, isAllowedRoute, ALLOWED_ROUTES } = require('./route-registry');
 
-const ALLOWED_ROUTES = new Set(Object.keys(ROUTE_DEFINITIONS));
+const ROUTE_TO_INTENT = Object.freeze({
+  chat: intentOfRoute('chat'),
+  rag: intentOfRoute('rag'),
+  agent: intentOfRoute('agent'),
+});
 const RETRYABLE_STATUS_CODES = new Set([429, 529]);
 const DEFAULT_ENDPOINT = 'https://api.typesafe.ai/v1/systemone';
 
@@ -236,7 +236,7 @@ class JevDecisionService {
       throw new JevDecisionError('Jev 响应缺少 answers.route', 'JEV_INVALID_RESPONSE');
     }
     const route = String(answer.choice || '').trim().toLowerCase();
-    if (!ALLOWED_ROUTES.has(route)) {
+    if (!isAllowedRoute(route)) {
       throw new JevDecisionError(`Jev 返回了不允许的路由：${route || 'empty'}`, 'JEV_INVALID_ROUTE');
     }
     const probabilities = normalizeProbabilities(answer.probabilities);
