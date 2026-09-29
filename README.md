@@ -246,6 +246,8 @@ Redis        ── 跨实例通知与短租约（不是业务数据主库）
 SQLite       ── Job、会话等现阶段事实来源
 ```
 
+第三阶段已提供 PostgreSQL Repository 与导入工具。默认仍为 `DATABASE_BACKEND=sqlite`；切换前先执行 PostgreSQL schema migration 和 SQLite 导入，验证用户、会话、任务、附件元数据、反馈数量一致后，再将 `DATABASE_BACKEND=postgres` 灰度启用。
+
 ## 常用命令
 
 ```bash

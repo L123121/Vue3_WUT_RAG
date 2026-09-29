@@ -90,6 +90,12 @@ vim deploy/.env.production
 
 第二阶段 Compose 会同时启动 `backend`、`worker`、`redis`：API 容器只处理 HTTP/SSE，Worker 容器执行 Job 和调度清理任务。Redis 用于跨实例任务通知和短租约，SQLite 仍是 Job 的事实来源；若本地直接运行且未设置 `REDIS_URL`，系统会保持第一阶段的单机兼容模式。
 
+附件和 Agent 工件使用私有对象存储接口。默认 `OBJECT_STORAGE_BACKEND=local`，对象保存在 `backend-data` volume 的 `objects/` 下；切换 `OBJECT_STORAGE_BACKEND=s3` 后可配置 MinIO、AWS S3 或兼容 SigV4 的对象存储。无论底层实现如何，浏览器始终通过后端的用户/会话归属校验读取对象，不能得到公开对象 URL。
+
+第三阶段 PostgreSQL 采用并存迁移：先设置 `DATABASE_URL`，执行 `npm --prefix backend run db:postgres:migrate` 创建 schema，再执行 `npm --prefix backend run db:sqlite:import-postgres` 导入用户、会话、Job、附件元数据和反馈。核对导入结果后再将 `DATABASE_BACKEND=postgres` 灰度开启；文档与记忆等未迁移 KV 资源仍会继续使用 SQLite。
+
+Docker Compose 默认不启动 PostgreSQL。完成数据备份与导入演练后，可使用 `docker compose --profile postgres up -d postgres backend worker` 启动可选 profile；同时在 `deploy/.env.production` 设置 `POSTGRES_PASSWORD`、`DATABASE_BACKEND=postgres` 和指向 `postgres` 服务的 `DATABASE_URL`。
+
 ### 3. 配置 nginx
 
 #### HTTPS 域名部署

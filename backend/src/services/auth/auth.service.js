@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const config = require('../../config');
 const { getDatabasePath } = require('../../db/migration-runner');
+const { isPostgresEnabled } = require('../../db/postgres.service');
 
 const scrypt = promisify(crypto.scrypt);
 const USERNAME_RE = /^[a-zA-Z0-9_.@-]{3,32}$/;
@@ -224,4 +225,4 @@ class AuthService {
   }
 }
 
-module.exports = new AuthService();
+module.exports = isPostgresEnabled() ? new (require('./postgres-auth.service').PostgresAuthService)() : new AuthService();

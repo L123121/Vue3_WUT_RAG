@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const config = require('./config');
 const { runMigrations } = require('./db/migration-runner');
+const { isPostgresEnabled, runPostgresMigrations, closePostgres } = require('./db/postgres.service');
 
 // 所有服务依赖 SQLite 前先完成版本化迁移；失败时阻止进程启动，避免半升级状态接收流量。
 runMigrations();
@@ -9,6 +10,7 @@ runMigrations();
 const { operationalMetrics } = require('./services/observability/operational-metrics.service');
 const { initTracing, shutdownTracing } = require('./services/observability/otel-tracing.service');
 const { getRedisRuntime } = require('./services/runtime/redis-runtime.service');
+const { getObjectStorage } = require('./services/storage/object-storage.service');
 // 环境变量校验已在 config/index.js 中统一处理，此处不再重复
 
 // OTel traces（OTLP 导出）：OTEL_EXPORTER_OTLP_ENDPOINT 未设置时为 Noop（不加载 SDK）
@@ -60,17 +62,22 @@ app.use((err, req, res, _next) => {
   });
 });
 
-// 启动
-const server = app.listen(PORT, '0.0.0.0', async () => {
+let server = null;
+
+// 启动：PostgreSQL migration 必须完成后才开始监听，避免半迁移状态接收流量。
+async function startServer() {
+  if (isPostgresEnabled()) await runPostgresMigrations();
+  server = app.listen(PORT, '0.0.0.0', async () => {
   const hasApi = !!config.ai.apiKey;
   logEvent('info', 'server_started', {
     url: `http://localhost:${PORT}`,
     aiModel: config.ai.model || config.DEFAULT_AI_MODEL,
     mode: hasApi ? 'online' : 'mock',
-    storage: 'SQLite（store.db，WAL）',
+    storage: isPostgresEnabled() ? 'PostgreSQL + SQLite legacy KV' : 'SQLite（store.db，WAL）',
     vector: `Qdrant（${config.vectorStore.qdrantUrl}）`,
   });
   void getRedisRuntime().probe();
+  void getObjectStorage().probe?.();
 
   // 启动时初始化向量库：注册 documentProvider + 重建索引
   // DocumentService.indexingService 是懒加载，如果没人调用索引方法，
@@ -105,7 +112,9 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
   } catch (err) {
     logEvent('warn', 'upload_dir_cleanup_start_failed', { message: '上传目录清理任务启动失败', error: err.message });
   }
-});
+  });
+  return server;
+}
 
 // 优雅关闭：向量数据由 Qdrant 服务端自持久化，这里只需停本进程资源
 let isShuttingDown = false;
@@ -119,8 +128,9 @@ async function shutdown(signal, exitCode = 0) {
   try { require('./services/knowledge/file-upload.service').stopUploadsCleanup(); } catch { /* 清理器未启动时忽略 */ }
   try { require('./services/jobs/job.service').stopJobRunner(); } catch { /* 任务执行器未启动时忽略 */ }
   try { await require('./services/jobs/job.service').closeJobStore(); } catch { /* 任务数据库未打开时忽略 */ }
+  try { await closePostgres(); } catch { /* PostgreSQL 未启用或尚未连接时忽略 */ }
   await shutdownTracing();
-  server.close(() => {
+  server?.close(() => {
     operationalMetrics.close();
     logEvent('info', 'http_server_closed', { message: 'HTTP server 已关闭' });
     process.exit(exitCode);
@@ -130,6 +140,10 @@ async function shutdown(signal, exitCode = 0) {
 }
 
 if (!process.env.VITEST) {
+  startServer().catch((error) => {
+    console.error(`[Server] startup failed: ${error.message}`);
+    process.exit(1);
+  });
   process.on('unhandledRejection', (reason) => {
     logEvent('error', 'unhandled_rejection', { detail: reason instanceof Error ? reason.stack || reason.message : String(reason) });
     void shutdown('unhandledRejection', 1);
@@ -141,3 +155,5 @@ if (!process.env.VITEST) {
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 }
+
+module.exports = { app, startServer };

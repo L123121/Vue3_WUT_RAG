@@ -79,7 +79,7 @@ COPY --from=backend-deps /app/backend/node_modules ./backend/node_modules
 # 可写目录归属官方镜像内置的 node 用户(uid 1000),容器以非 root 运行;
 # dist/src/node_modules 保持 root 只读,即使进程被攻破也可写面也仅限数据目录。
 # backend/media 是 DOCX 解析图片的落盘目录(saveBase64Image 会写入)
-RUN mkdir -p /app/backend/data /app/backend/uploads /app/backend/media /app/.model-cache \
+RUN mkdir -p /app/backend/data/objects /app/backend/uploads /app/backend/media /app/.model-cache \
     && chown -R node:node /app/backend/data /app/backend/uploads /app/backend/media /app/.model-cache
 
 # ---- 环境变量默认值 ----

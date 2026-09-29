@@ -341,6 +341,29 @@ module.exports = {
     timeoutMs: Math.max(parseInt(process.env.REDIS_TIMEOUT_MS, 10) || 1500, 100),
     jobsChannel: process.env.REDIS_JOBS_CHANNEL || 'wut:jobs:available',
   },
+  storage: {
+    // local = backend/data/objects；s3 = AWS S3 / MinIO / 兼容 SigV4 的 OSS endpoint。
+    backend: process.env.OBJECT_STORAGE_BACKEND || 'local',
+    localDir: process.env.OBJECT_STORAGE_LOCAL_DIR || path.join(__dirname, '..', '..', 'data', 'objects'),
+    s3: {
+      endpoint: process.env.S3_ENDPOINT || '',
+      region: process.env.S3_REGION || 'us-east-1',
+      bucket: process.env.S3_BUCKET || '',
+      accessKeyId: process.env.S3_ACCESS_KEY_ID || '',
+      secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
+      forcePathStyle: process.env.S3_FORCE_PATH_STYLE !== 'false',
+      timeoutMs: parseInt(process.env.S3_TIMEOUT_MS, 10) || 5000,
+    },
+  },
+  database: {
+    backend: process.env.DATABASE_BACKEND || (process.env.DATABASE_URL ? 'postgres' : 'sqlite'),
+    url: process.env.DATABASE_URL || '',
+    poolMax: Math.max(parseInt(process.env.DATABASE_POOL_MAX, 10) || 10, 1),
+    idleTimeoutMs: Math.max(parseInt(process.env.DATABASE_IDLE_TIMEOUT_MS, 10) || 30000, 1000),
+    connectTimeoutMs: Math.max(parseInt(process.env.DATABASE_CONNECT_TIMEOUT_MS, 10) || 5000, 500),
+    ssl: process.env.DATABASE_SSL === 'true',
+    sslRejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false',
+  },
   // 管理员登录配置（密码未设置时生成随机密码，禁止空密码）
   admin: (() => {
     const fs = require('fs');

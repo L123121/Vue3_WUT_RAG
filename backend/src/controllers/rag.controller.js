@@ -18,6 +18,7 @@ const { upload, parseFile, cleanupFile } = require('../services/knowledge/file-u
 const { vectorStore: vectorStoreSingleton } = require('../services/knowledge/vector-store-qdrant.service');
 const { logEvent } = require('../services/observability/observability.service');
 const jobService = require('../services/jobs/job.service');
+const { getRepositories } = require('../repositories/repository-factory');
 
 const ragService = new RagService(aiService);
 const memoryService = new MemoryService();
@@ -30,6 +31,7 @@ const FEEDBACK_ALL_EVENTS_KEY = 'rag_feedback_events:all';
 // 反馈 → 评测集数据飞轮状态：queued = 已加入待导出队列（UI 一键操作）；
 // exported = export-badcases.cjs 已写入评测数据集
 const FEEDBACK_EVAL_STATUSES = new Set(['queued', 'exported']);
+const feedbackRepository = getRepositories()?.feedback || null;
 
 function saveChatMemory(userId, message, reply) {
   Promise.resolve(memoryService.saveChatMemory(userId, message, reply)).catch((error) => {
@@ -53,6 +55,7 @@ function normalizeFeedbackSources(sources = []) {
 }
 
 async function getAllFeedback() {
+  if (feedbackRepository) return feedbackRepository.list();
   const all = await store.hgetall(FEEDBACK_ALL_KEY);
   return Object.values(all || {}).map(parseFeedbackItem).filter(Boolean);
 }
@@ -136,14 +139,16 @@ const ragChat = async (req, res, next) => {
     }));
     res.setHeader('X-Trace-Id', result.traceId || req.traceId);
     try {
-      jobService.enqueueJob('quality.audit', {
+      Promise.resolve(jobService.enqueueJob('quality.audit', {
         question: message,
         answer: result.reply,
         sources: result.sources,
         traceId: result.traceId || req.traceId,
         userId: req.userId,
         route: 'rag-direct',
-      }, { idempotencyKey: `audit:${result.traceId || req.traceId}:${message}` });
+      }, { idempotencyKey: `audit:${result.traceId || req.traceId}:${message}` })).catch((error) => {
+        logEvent('warn', 'quality_audit_job_enqueue_failed', { scope: 'rag_non_stream', error: error.message });
+      });
     } catch (error) {
       logEvent('warn', 'quality_audit_job_enqueue_failed', { scope: 'rag_non_stream', error: error.message });
     }
@@ -219,14 +224,16 @@ const ragChatStream = async (req, res, next) => {
     res.end();
 
     try {
-      jobService.enqueueJob('quality.audit', {
+      Promise.resolve(jobService.enqueueJob('quality.audit', {
         question: message,
         answer: fullReply,
         sources: audit.sources,
         traceId: audit.traceId,
         userId: req.userId,
         route: 'rag-direct-stream',
-      }, { idempotencyKey: `audit:${audit.traceId}:${streamContext.runId}` });
+      }, { idempotencyKey: `audit:${audit.traceId}:${streamContext.runId}` })).catch((error) => {
+        logEvent('warn', 'quality_audit_job_enqueue_failed', { scope: 'rag_stream', error: error.message });
+      });
     } catch (error) {
       logEvent('warn', 'quality_audit_job_enqueue_failed', { scope: 'rag_stream', error: error.message });
     }
@@ -293,8 +300,11 @@ const submitFeedback = async (req, res, next) => {
       eventId: `feedback_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     };
 
-    await store.hset(feedbackKey, feedback.id, feedback);
-    await store.hset(FEEDBACK_ALL_KEY, `${userId}:${feedback.id}`, feedback);
+    if (feedbackRepository) await feedbackRepository.upsert(feedback);
+    else {
+      await store.hset(feedbackKey, feedback.id, feedback);
+      await store.hset(FEEDBACK_ALL_KEY, `${userId}:${feedback.id}`, feedback);
+    }
     await store.rpush(eventsKey, JSON.stringify(feedbackEvent));
     await store.rpush(FEEDBACK_ALL_EVENTS_KEY, JSON.stringify(feedbackEvent));
     await trimFeedbackEvents(eventsKey);
@@ -389,8 +399,8 @@ const updateFeedbackEvalStatus = async (req, res, next) => {
       return errorResponse(res, '评测状态无效', 400);
     }
 
-    const userFeedback = await store.hgetall(`rag_feedback:${userId}`);
-    const existing = userFeedback ? userFeedback[feedbackId] : null;
+    const userFeedback = feedbackRepository ? null : await store.hgetall(`rag_feedback:${userId}`);
+    const existing = feedbackRepository ? await feedbackRepository.get(userId, feedbackId) : (userFeedback ? userFeedback[feedbackId] : null);
     if (!existing) {
       return errorResponse(res, '反馈不存在', 404);
     }
@@ -400,8 +410,11 @@ const updateFeedbackEvalStatus = async (req, res, next) => {
       evalStatus: status,
       evalStatusAt: new Date().toISOString(),
     };
-    await store.hset(`rag_feedback:${userId}`, feedbackId, updated);
-    await store.hset(FEEDBACK_ALL_KEY, `${userId}:${feedbackId}`, updated);
+    if (feedbackRepository) await feedbackRepository.upsert(updated);
+    else {
+      await store.hset(`rag_feedback:${userId}`, feedbackId, updated);
+      await store.hset(FEEDBACK_ALL_KEY, `${userId}:${feedbackId}`, updated);
+    }
 
     successResponse(res, { feedbackId, evalStatus: status }, status === 'queued' ? '已加入评测集候选' : '已标记为已导出');
   } catch (error) {

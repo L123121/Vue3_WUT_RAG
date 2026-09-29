@@ -69,14 +69,16 @@ function createChatHandlers(conversationOrchestrator, dependencies = {}) {
 
       writeRunCompleted(res, streamContext);
       try {
-        enqueueJob('quality.audit', {
+        Promise.resolve(enqueueJob('quality.audit', {
           question: message,
           answer: audit.answer,
           sources: audit.sources,
           traceId: audit.traceId,
           userId: req.userId,
           route: audit.sources.length ? "rag-stream" : "chat-stream",
-        }, { idempotencyKey: `audit:${audit.traceId}:${streamContext.runId}` });
+        }, { idempotencyKey: `audit:${audit.traceId}:${streamContext.runId}` })).catch((error) => {
+          logEvent("warn", "quality_audit_job_enqueue_failed", { scope: "chat_stream", error: error.message });
+        });
       } catch (error) {
         logEvent("warn", "quality_audit_job_enqueue_failed", { scope: "chat_stream", error: error.message });
       }

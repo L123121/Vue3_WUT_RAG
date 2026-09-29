@@ -388,7 +388,7 @@ describe('AgentService（单轮工具调度，原生 function calling）', () =>
         offset: 0,
         hasMore: true,
       });
-      expect(fs.readdirSync(tmpDir).some((name) => name.endsWith('.md'))).toBe(true);
+      expect(fs.readdirSync(path.join(tmpDir, 'artifacts')).some((name) => name.endsWith('.md'))).toBe(true);
     } finally {
       config.agent.contextCompactionEnabled = previous.enabled;
       config.agent.toolResultSpillThreshold = previous.threshold;

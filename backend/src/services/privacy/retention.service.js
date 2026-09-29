@@ -159,7 +159,8 @@ function startRetentionSweeper() {
     try {
       const { enqueueJob } = require('../jobs/job.service');
       const dayKey = new Date().toISOString().slice(0, 10);
-      enqueueJob('privacy.retention.sweep', {}, { idempotencyKey: `privacy-retention:${dayKey}` });
+      Promise.resolve(enqueueJob('privacy.retention.sweep', {}, { idempotencyKey: `privacy-retention:${dayKey}` }))
+        .catch((error) => logEvent('warn', 'privacy_retention_job_enqueue_failed', { error: error.message }));
     } catch (error) {
       // 任务系统不可用时保留一次直接清理兜底，并记录故障；正常路径始终走持久化 Job。
       logEvent('warn', 'privacy_retention_job_enqueue_failed_fallback_direct', { error: error.message });

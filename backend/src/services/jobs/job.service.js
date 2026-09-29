@@ -5,6 +5,8 @@ const fs = require('fs');
 const { getDatabasePath, runMigrations } = require('../../db/migration-runner');
 const { logEvent } = require('../observability/observability.service');
 const { getRedisRuntime } = require('../runtime/redis-runtime.service');
+const { isPostgresEnabled } = require('../../db/postgres.service');
+const { PostgresJobService } = require('./postgres-job.service');
 
 const JOB_STATUSES = new Set(['queued', 'running', 'retrying', 'succeeded', 'failed']);
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -19,6 +21,14 @@ let activeTickPromise = null;
 let migrationsReady = false;
 let nextPruneAt = 0;
 const handlers = new Map();
+let postgresJobService = null;
+
+function getPostgresJobService() {
+  if (!postgresJobService) {
+    postgresJobService = new PostgresJobService({ handlers });
+  }
+  return postgresJobService;
+}
 
 function getDb() {
   if (db?.open) return db;
@@ -60,10 +70,12 @@ function normalizeJob(row) {
 function registerJobHandler(type, handler) {
   if (!type || typeof handler !== 'function') throw new TypeError('job handler requires type and function');
   handlers.set(String(type), handler);
+  if (postgresJobService) postgresJobService.registerJobHandler(type, handler);
   return () => handlers.delete(String(type));
 }
 
 function enqueueJob(type, payload = {}, options = {}) {
+  if (isPostgresEnabled()) return getPostgresJobService().enqueueJob(type, payload, options);
   const now = Date.now();
   const id = options.id || `job_${now}_${crypto.randomBytes(5).toString('hex')}`;
   const maxAttempts = Math.max(Number.parseInt(options.maxAttempts, 10) || DEFAULT_MAX_ATTEMPTS, 1);
@@ -86,10 +98,12 @@ function enqueueJob(type, payload = {}, options = {}) {
 }
 
 function getJob(id) {
+  if (isPostgresEnabled()) return getPostgresJobService().getJob(id);
   return normalizeJob(getDb().prepare('SELECT * FROM background_jobs WHERE id = ?').get(String(id)));
 }
 
 function listJobs(options = {}) {
+  if (isPostgresEnabled()) return getPostgresJobService().listJobs(options);
   const clauses = [];
   const params = [];
   if (options.status && JOB_STATUSES.has(String(options.status))) {
@@ -147,6 +161,7 @@ function completeJob(id) {
 }
 
 function pruneJobs(now = Date.now()) {
+  if (isPostgresEnabled()) return getPostgresJobService().pruneJobs(now);
   const retentionDays = Math.max(Number.parseInt(process.env.JOB_RETENTION_DAYS, 10) || 30, 1);
   const cutoff = now - retentionDays * 24 * 60 * 60 * 1000;
   return getDb().prepare(`
@@ -176,6 +191,7 @@ function failJob(job, error) {
 }
 
 function retryJob(id) {
+  if (isPostgresEnabled()) return getPostgresJobService().retryJob(id);
   const now = Date.now();
   const result = getDb().prepare(`
     UPDATE background_jobs
@@ -187,6 +203,7 @@ function retryJob(id) {
 }
 
 async function runOneJob(options = {}) {
+  if (isPostgresEnabled()) return getPostgresJobService().runOneJob(options);
   const job = claimNextJob(options.now || Date.now(), options.lockTimeoutMs || DEFAULT_LOCK_TIMEOUT_MS);
   if (!job) return null;
   const handler = handlers.get(job.type);
@@ -244,6 +261,7 @@ function stopJobRunner() {
 
 async function closeJobStore() {
   await stopJobRunner();
+  postgresJobService = null;
   if (db?.open) db.close();
   db = null;
   migrationsReady = false;

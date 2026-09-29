@@ -4,6 +4,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { redis: defaultStore } = require('../memory/memory-store.service');
+const { getObjectStorage, normalizeKey } = require('../storage/object-storage.service');
+const { getRepositories } = require('../../repositories/repository-factory');
 
 const uploadDir = path.join(__dirname, '../../uploads');
 const attachmentPrefix = 'attachment:';
@@ -42,7 +44,15 @@ const getAttachmentPath = (attachment) => {
   return absolutePath.startsWith(root) ? absolutePath : '';
 };
 
-const createAttachmentService = ({ store = defaultStore, now = Date.now, ttlMs = DEFAULT_TTL_MS } = {}) => {
+const objectKeyFor = (attachmentId, storageName) => {
+  const id = normalizeAttachmentId(attachmentId);
+  const name = normalizeStorageName(storageName);
+  return id && name ? `attachments/${id}/${name}` : '';
+};
+
+const createAttachmentService = (options = {}) => {
+  const { store = defaultStore, now = Date.now, ttlMs = DEFAULT_TTL_MS, objectStorage = getObjectStorage() } = options;
+  const repository = options.repository || (!options.store ? getRepositories()?.attachments : null);
   const create = async ({
     ownerUserId,
     conversationId = null,
@@ -51,6 +61,7 @@ const createAttachmentService = ({ store = defaultStore, now = Date.now, ttlMs =
     mimetype,
     size,
     isImage = false,
+    objectKey,
   } = {}) => {
     const owner = normalizeUserId(ownerUserId);
     const storedName = normalizeStorageName(storageName);
@@ -65,6 +76,7 @@ const createAttachmentService = ({ store = defaultStore, now = Date.now, ttlMs =
       ownerUserId: owner,
       conversationId: normalizeConversationId(conversationId),
       storageName: storedName,
+      objectKey: normalizeKey(objectKey) || objectKeyFor(attachmentId, storedName),
       originalName: sanitizeOriginalName(originalName),
       mimetype: asText(mimetype, 160) || 'application/octet-stream',
       size: Math.max(0, Number(size) || 0),
@@ -73,6 +85,7 @@ const createAttachmentService = ({ store = defaultStore, now = Date.now, ttlMs =
       expiresAt,
     };
 
+    if (repository) return repository.create(metadata);
     await store.hset(metadataKey(attachmentId), metadata);
     await store.hset(attachmentByStorageKey, storedName, attachmentId);
     await store.sadd(attachmentIdsKey, attachmentId);
@@ -82,6 +95,7 @@ const createAttachmentService = ({ store = defaultStore, now = Date.now, ttlMs =
   const getById = async (attachmentId) => {
     const id = normalizeAttachmentId(attachmentId);
     if (!id) return null;
+    if (repository) return repository.getById(id);
     const metadata = await store.hgetall(metadataKey(id));
     if (!metadata || metadata.id !== id) return null;
     return metadata;
@@ -90,8 +104,19 @@ const createAttachmentService = ({ store = defaultStore, now = Date.now, ttlMs =
   const getByStorageName = async (storageName) => {
     const storedName = normalizeStorageName(storageName);
     if (!storedName) return null;
+    if (repository) return repository.getByStorageName(storedName);
     const attachmentId = await store.hget(attachmentByStorageKey, storedName);
     return attachmentId ? getById(attachmentId) : null;
+  };
+
+  const setObjectKey = async (attachmentId, objectKey) => {
+    const metadata = await getById(attachmentId);
+    const normalized = normalizeKey(objectKey);
+    if (!metadata || !normalized) return null;
+    if (repository) return repository.setObjectKey(attachmentId, normalized);
+    const updated = { ...metadata, objectKey: normalized };
+    await store.hset(metadataKey(metadata.id), updated);
+    return updated;
   };
 
   const canRead = (metadata, { userId, conversationId } = {}) => {
@@ -101,7 +126,7 @@ const createAttachmentService = ({ store = defaultStore, now = Date.now, ttlMs =
     const requestedConversation = normalizeConversationId(conversationId);
     if (metadata.conversationId && metadata.conversationId !== requestedConversation) return false;
     if (metadata.expiresAt && Number(metadata.expiresAt) <= now()) return false;
-    return !!getAttachmentPath(metadata);
+    return Boolean(normalizeKey(metadata.objectKey) || getAttachmentPath(metadata));
   };
 
   const getForUser = async (attachmentId, context = {}) => {
@@ -112,8 +137,12 @@ const createAttachmentService = ({ store = defaultStore, now = Date.now, ttlMs =
   const remove = async (attachmentId) => {
     const metadata = await getById(attachmentId);
     if (!metadata) return false;
+    const objectKey = normalizeKey(metadata.objectKey);
+    if (objectKey) await objectStorage.deleteObject(objectKey).catch(() => {});
+    // 兼容第一阶段旧附件：objectKey 缺失时仍从上传目录删除。
     const filePath = getAttachmentPath(metadata);
-    if (filePath) await fs.promises.unlink(filePath).catch(() => {});
+    if (!objectKey && filePath) await fs.promises.unlink(filePath).catch(() => {});
+    if (repository) return repository.delete(metadata.id);
     await store.hdel(attachmentByStorageKey, metadata.storageName);
     await store.srem(attachmentIdsKey, metadata.id);
     await store.del(metadataKey(metadata.id));
@@ -121,12 +150,14 @@ const createAttachmentService = ({ store = defaultStore, now = Date.now, ttlMs =
   };
 
   const cleanupExpired = async () => {
-    const ids = await store.smembers(attachmentIdsKey);
+    const candidates = repository ? await repository.listAll() : await store.smembers(attachmentIdsKey);
     let removed = 0;
-    for (const id of ids || []) {
-      const metadata = await getById(id);
-      if (!metadata || Number(metadata.expiresAt) <= now() || !fs.existsSync(getAttachmentPath(metadata))) {
-        if (await remove(id)) removed += 1;
+    for (const item of candidates || []) {
+      const metadata = repository ? item : await getById(item);
+      const objectKey = normalizeKey(metadata?.objectKey);
+      const exists = objectKey ? await objectStorage.exists(objectKey).catch(() => false) : fs.existsSync(getAttachmentPath(metadata));
+      if (!metadata || Number(metadata.expiresAt) <= now() || !exists) {
+        if (await remove(metadata.id)) removed += 1;
       }
     }
     return removed;
@@ -136,9 +167,31 @@ const createAttachmentService = ({ store = defaultStore, now = Date.now, ttlMs =
     create,
     getById,
     getByStorageName,
+    setObjectKey,
     getForUser,
     canRead,
     getAttachmentPath,
+    getObject: async (attachment) => {
+      const objectKey = normalizeKey(attachment?.objectKey);
+      if (objectKey) return objectStorage.getObject(objectKey);
+      const filePath = getAttachmentPath(attachment);
+      if (!filePath) return null;
+      try {
+        const body = await fs.promises.readFile(filePath);
+        return { key: '', body, size: body.length, contentType: attachment.mimetype || 'application/octet-stream' };
+      } catch (error) {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+      }
+    },
+    persistUpload: async (attachmentId, storageName, filePath, options = {}) => {
+      const objectKey = objectKeyFor(attachmentId, storageName);
+      if (!objectKey) throw new Error('附件对象 key 无效');
+      const body = await fs.promises.readFile(filePath);
+      const saved = await objectStorage.putObject(objectKey, body, { contentType: options.contentType });
+      return { ...saved, objectKey };
+    },
+    objectKeyFor,
     remove,
     cleanupExpired,
     normalizeAttachmentId,
@@ -154,4 +207,5 @@ module.exports = {
   createAttachmentService,
   createAttachmentId,
   getAttachmentPath,
+  objectKeyFor,
 };

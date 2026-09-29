@@ -43,6 +43,8 @@ services:
       - PROCESS_ROLE=api
       - JOB_RUNNER_ENABLED=false
       - JOB_SCHEDULER_ENABLED=false
+      - DATABASE_BACKEND=${DATABASE_BACKEND:-sqlite}
+      - DATABASE_URL=${DATABASE_URL:-}
       # 旧镜像不含 @qdrant/js-client-rest：通过 NODE_PATH 指向独立依赖目录，不动镜像自带 node_modules
       - NODE_PATH=/app/qdrant-deps/node_modules
     depends_on:
@@ -90,6 +92,8 @@ services:
       - PROCESS_ROLE=worker
       - JOB_RUNNER_ENABLED=true
       - JOB_SCHEDULER_ENABLED=true
+      - DATABASE_BACKEND=${DATABASE_BACKEND:-sqlite}
+      - DATABASE_URL=${DATABASE_URL:-}
     depends_on:
       - qdrant
       - redis
@@ -107,6 +111,19 @@ services:
       - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
+    restart: unless-stopped
+
+  postgres:
+    profiles: ["postgres"]
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-wut_rag}
+      - POSTGRES_USER=${POSTGRES_USER:-wut}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?请在 deploy/.env.production 设置 POSTGRES_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
     restart: unless-stopped
 
   # ---- Qdrant 向量数据库（独立服务） ----
@@ -136,4 +153,6 @@ volumes:
   qdrant-storage:
     driver: local
   redis-data:
+    driver: local
+  postgres-data:
     driver: local

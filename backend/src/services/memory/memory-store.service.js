@@ -5,6 +5,7 @@ const { logEvent } = require('../observability/observability.service');
 const path = require('path');
 const fs = require('fs');
 const { getDatabasePath } = require('../../db/migration-runner');
+const { getRepositories } = require('../../repositories/repository-factory');
 
 const DATA_DIR = path.join(__dirname, '../../data');
 const DB_FILE = getDatabasePath();
@@ -421,6 +422,9 @@ const createConversationId = () =>
   `conv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
 class ConversationStore {
+  constructor(options = {}) {
+    this.repository = options.repository || (!options.store ? getRepositories()?.conversations : null);
+  }
   _getKey(userId) { return `conversations:${userId}`; }
 
   _normalizeConversation(conversation = {}) {
@@ -435,6 +439,7 @@ class ConversationStore {
   }
 
   async getConversations(userId) {
+    if (this.repository) return this.repository.list(userId);
     const all = await store.hgetall(this._getKey(userId));
     if (!all) return [];
     return Object.values(all)
@@ -447,6 +452,7 @@ class ConversationStore {
   }
 
   async getConversation(userId, conversationId) {
+    if (this.repository) return this.repository.get(userId, String(conversationId));
     const raw = await store.hget(this._getKey(userId), String(conversationId));
     if (!raw) return null;
     try { return this._normalizeConversation(typeof raw === 'string' ? JSON.parse(raw) : raw); }
@@ -458,6 +464,7 @@ class ConversationStore {
       title: title && String(title).trim() ? String(title).trim() : '新会话',
       messages: [],
     });
+    if (this.repository) return this.repository.create(userId, conversation);
     await store.hset(this._getKey(userId), conversation.id, conversation);
     return conversation;
   }
@@ -471,6 +478,7 @@ class ConversationStore {
       ...(updates.messages !== undefined ? { messages: Array.isArray(updates.messages) ? updates.messages : existing.messages } : {}),
       updatedAt: new Date().toISOString(),
     });
+    if (this.repository) return this.repository.save(userId, next);
     await store.hset(this._getKey(userId), next.id, next);
     return next;
   }
@@ -503,6 +511,7 @@ class ConversationStore {
   }
 
   async deleteConversation(userId, conversationId) {
+    if (this.repository) return this.repository.delete(userId, String(conversationId));
     return (await store.hdel(this._getKey(userId), String(conversationId))) > 0;
   }
 }

@@ -269,9 +269,9 @@ class WikiService {
     // 失败只告警，读取侧自然回退到已有（可能是空）relatedPages
     if (visible && meta.relationsRevision !== revision) {
       try {
-        this._enqueueJob('wiki.relations.compile', { docId, revision }, {
+        Promise.resolve(this._enqueueJob('wiki.relations.compile', { docId, revision }, {
           idempotencyKey: `wiki-relations:${docId}:${revision}`,
-        });
+        })).catch((error) => logEvent('warn', 'wiki_relation_job_enqueue_failed', { docId, error: error.message }));
       } catch (err) {
         logEvent('warn', 'wiki_relation_job_enqueue_failed', { docId, error: err.message });
       }

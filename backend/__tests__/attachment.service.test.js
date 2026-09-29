@@ -1,6 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const { createAttachmentService } = require('../src/services/knowledge/attachment.service');
+const { LocalObjectStorage } = require('../src/services/storage/object-storage.service');
+
+const dirs = [];
+afterEach(() => {
+  while (dirs.length) rmSync(dirs.pop(), { recursive: true, force: true });
+});
 
 const createStore = () => {
   const hashes = new Map();
@@ -84,5 +93,20 @@ describe('attachment.service', () => {
     expect(service.normalizeStorageName('upload-1-2.txt')).toBe('upload-1-2.txt');
     timestamp += 61_000;
     expect(await service.getForUser(attachment.id, { userId: 'user-a' })).toBeNull();
+  });
+
+  it('objectKey 优先从统一对象存储读取，不依赖本地 uploads 路径', async () => {
+    const rootDir = mkdtempSync(join(tmpdir(), 'wut-attachment-object-'));
+    dirs.push(rootDir);
+    const objectStorage = new LocalObjectStorage({ rootDir });
+    const service = createAttachmentService({ store: createStore(), objectStorage });
+    const attachment = await service.create({
+      ownerUserId: 'user-a', storageName: 'upload-2-3.txt', originalName: 'notes.txt', mimetype: 'text/plain', size: 5,
+    });
+    await objectStorage.putObject(attachment.objectKey, 'hello');
+    const object = await service.getObject(attachment);
+    expect(object.body.toString()).toBe('hello');
+    expect(await service.remove(attachment.id)).toBe(true);
+    expect(await objectStorage.exists(attachment.objectKey)).toBe(false);
   });
 });

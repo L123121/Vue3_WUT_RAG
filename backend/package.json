@@ -7,6 +7,8 @@
     "start": "node src/app.js",
     "worker": "node src/worker.js",
     "worker:dev": "nodemon src/worker.js",
+    "db:postgres:migrate": "node scripts/migrate-postgres.cjs",
+    "db:sqlite:import-postgres": "node scripts/import-sqlite-to-postgres.cjs",
     "build": "cd .. && npm run build",
     "test": "node --experimental-vm-modules ../node_modules/vitest/vitest.mjs run --config ../vitest.backend.config.js",
     "test:watch": "node --experimental-vm-modules ../node_modules/vitest/vitest.mjs --config ../vitest.backend.config.js"
@@ -32,6 +34,7 @@
     "multer": "^2.2.0",
     "mupdf": "^1.28.0",
     "pdf-parse": "^1.1.1",
+    "pg": "^8.23.0",
     "turndown": "^7.2.4",
     "turndown-plugin-gfm": "^1.0.2"
   },

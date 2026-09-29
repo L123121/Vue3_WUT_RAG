@@ -591,7 +591,8 @@ function startUploadsCleanup() {
     try {
       const { enqueueJob } = require('../jobs/job.service');
       const dayKey = new Date().toISOString().slice(0, 10);
-      enqueueJob('uploads.cleanup', {}, { idempotencyKey: `uploads-cleanup:${dayKey}` });
+      Promise.resolve(enqueueJob('uploads.cleanup', {}, { idempotencyKey: `uploads-cleanup:${dayKey}` }))
+        .catch((error) => logEvent('warn', 'file_upload_cleanup_job_enqueue_failed', { error: error.message }));
     } catch (error) {
       logEvent('warn', 'file_upload_cleanup_job_enqueue_failed_fallback_direct', { error: error.message });
       void cleanOldUploads().catch((cleanupError) => logEvent('warn', 'file_upload_direct_cleanup_fallback_failed', { error: cleanupError.message }));

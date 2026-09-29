@@ -7,7 +7,7 @@ const path = require('path');
 const config = require('../config');
 const { logEvent } = require('../services/observability/observability.service');
 const { getEmbeddingHealth } = require('../services/knowledge/embedding.service');
-const { getDependencyHealth } = require('../services/observability/dependency-health.service');
+const { getDependencyHealthAsync } = require('../services/observability/dependency-health.service');
 
 function applyRoutes(app, chatLimiter) {
   const { router: apiRoutes } = require('./index');
@@ -35,14 +35,14 @@ function applyRoutes(app, chatLimiter) {
   });
 
   // 就绪检查反映核心依赖是否可以承接正常流量。
-  app.get('/api/ready', (req, res) => {
-    const health = getDependencyHealth();
+  app.get('/api/ready', async (req, res) => {
+    const health = await getDependencyHealthAsync();
     res.status(health.ready ? 200 : 503).json(health);
   });
 
   // 详细健康快照：保留旧字段，兼容已有部署探针和评测脚本。
-  app.get('/api/health', (req, res) => {
-    const health = getDependencyHealth();
+  app.get('/api/health', async (req, res) => {
+    const health = await getDependencyHealthAsync();
     const hasApiConfig = !!config.ai.apiKey;
     res.status(health.status === 'unavailable' ? 503 : 200).json({
       ...health,
@@ -118,21 +118,32 @@ function applyRoutes(app, chatLimiter) {
         size: file.size,
         isImage,
       });
+      const persisted = await attachmentService.persistUpload(attachment.id, attachment.storageName, file.path, {
+        contentType: attachment.mimetype,
+      });
+      const storedAttachment = await attachmentService.setObjectKey(attachment.id, persisted.objectKey);
+      if (!storedAttachment) throw new Error('附件对象元数据保存失败');
+      // 上传目录只作为解析临时区，对象写入成功后立即删除本地副本。
+      await require('fs').promises.unlink(file.path).catch(() => {});
 
       res.json({
         success: true,
         data: {
-          attachmentId: attachment.id,
-          url: `/api/chat/attachments/${attachment.id}${attachment.conversationId ? `?conversationId=${encodeURIComponent(attachment.conversationId)}` : ''}`,
-          name: attachment.originalName,
-          type: attachment.mimetype,
-          size: attachment.size,
+          attachmentId: storedAttachment.id,
+          url: `/api/chat/attachments/${storedAttachment.id}${storedAttachment.conversationId ? `?conversationId=${encodeURIComponent(storedAttachment.conversationId)}` : ''}`,
+          name: storedAttachment.originalName,
+          type: storedAttachment.mimetype,
+          size: storedAttachment.size,
           textContent,
-          isImage: attachment.isImage,
-          expiresAt: attachment.expiresAt,
+          isImage: storedAttachment.isImage,
+          expiresAt: storedAttachment.expiresAt,
         }
       });
     } catch (error) {
+      if (req.file?.filename) {
+        const attachment = await attachmentService.getByStorageName(req.file.filename).catch(() => null);
+        if (attachment) await attachmentService.remove(attachment.id).catch(() => {});
+      }
       if (req.file?.path) {
         try { require('fs').unlinkSync(req.file.path); } catch { /* 清理失败由定期任务兜底 */ }
       }
@@ -142,7 +153,6 @@ function applyRoutes(app, chatLimiter) {
   });
 
   // 私有附件下载：资源必须属于当前用户，且不允许公共/代理缓存。
-  const uploadStaticDir = path.join(__dirname, '../../uploads');
   const sendPrivateAttachment = async (req, res, attachment) => {
     if (!attachment || !attachmentService.canRead(attachment, {
       userId: req.userId,
@@ -151,8 +161,8 @@ function applyRoutes(app, chatLimiter) {
       return res.status(404).json({ success: false, error: '附件不存在或无权访问' });
     }
 
-    const filePath = attachmentService.getAttachmentPath(attachment);
-    if (!filePath) return res.status(404).json({ success: false, error: '附件不存在' });
+    const object = await attachmentService.getObject(attachment);
+    if (!object) return res.status(404).json({ success: false, error: '附件不存在' });
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Type', attachment.mimetype || 'application/octet-stream');
@@ -160,9 +170,8 @@ function applyRoutes(app, chatLimiter) {
       const safeName = String(attachment.originalName || 'attachment').replace(/[\r\n"\\]/g, '_');
       res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
     }
-    return res.sendFile(path.basename(filePath), { root: uploadStaticDir }, (error) => {
-      if (error && !res.headersSent) res.status(error.statusCode || 404).json({ success: false, error: '附件不存在' });
-    });
+    res.setHeader('Content-Length', object.size);
+    return res.send(object.body);
   };
 
   app.get('/api/chat/attachments/:attachmentId', requireAuth, async (req, res, next) => {

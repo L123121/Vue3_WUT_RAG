@@ -5,6 +5,7 @@ const path = require("path");
 const crypto = require("crypto");
 const config = require("../../config");
 const { logEvent } = require('../observability/observability.service');
+const { createObjectStorage, getObjectStorage, normalizeKey } = require('../storage/object-storage.service');
 
 /**
  * ContextCompactionService — Agent 上下文压缩与受控工具工件。
@@ -72,6 +73,18 @@ function resolveSpillPath(spillDir, artifactId) {
   return target;
 }
 
+function artifactObjectKey(artifactId) {
+  return normalizeKey(`artifacts/${artifactId}.md`);
+}
+
+function artifactStorage(spillDir) {
+  // 本地兼容模式沿用 toolSpillDir 作为对象根；S3 模式与附件共享同一 bucket。
+  if (config.storage?.backend !== 's3') {
+    return createObjectStorage({ backend: 'local', rootDir: spillDir || config.agent?.toolSpillDir || config.storage?.localDir });
+  }
+  return getObjectStorage();
+}
+
 /**
  * L1 大结果落盘。
  * meta: { traceId, userId, conversationId, round, index, spillDir }
@@ -83,28 +96,18 @@ async function spillToolResult(name, content, meta = {}) {
     return { content: text.substring(0, HARD_CAP_CHARS), spilled: false, originalLength: text.length, spillPath: null, artifactId: null };
   }
 
-  const spillDir = meta.spillDir || config.agent?.toolSpillDir;
   const artifactId = createArtifactId();
-  const spillPath = resolveSpillPath(spillDir, artifactId);
+  const objectKey = artifactObjectKey(artifactId);
   const metadata = buildMetadata(artifactId, name, text, meta);
   let written = false;
 
-  if (spillPath) {
+  if (objectKey) {
     try {
-      await fs.promises.mkdir(spillDir, { recursive: true, mode: 0o700 });
-      await fs.promises.chmod(spillDir, 0o700).catch(() => {});
-      const tempPath = `${spillPath}.${process.pid}.${crypto.randomBytes(6).toString("hex")}.tmp`;
-      await fs.promises.writeFile(tempPath, serializeSpill(metadata, text), { encoding: "utf8", mode: 0o600, flag: "wx" });
-      await fs.promises.rename(tempPath, spillPath);
-      await fs.promises.chmod(spillPath, 0o600).catch(() => {});
+      await artifactStorage(meta.spillDir).putObject(objectKey, serializeSpill(metadata, text), { contentType: 'text/markdown; charset=utf-8' });
       written = true;
-      pruneSpillDir(spillDir).catch(() => {});
+      pruneSpillDir(meta.spillDir).catch(() => {});
     } catch (err) {
       logEvent('warn', 'compaction_tool_result_persist_failed', { error: err.message });
-      try {
-        const entries = await fs.promises.readdir(spillDir);
-        await Promise.all(entries.filter((entry) => entry.endsWith('.tmp')).map((entry) => fs.promises.unlink(path.join(spillDir, entry)).catch(() => {})));
-      } catch { /* 目录创建失败时无需清理 */ }
     }
   }
 
@@ -116,7 +119,8 @@ async function spillToolResult(name, content, meta = {}) {
     content: `${excerpt}\n\n${reference}`,
     spilled: written,
     originalLength: text.length,
-    spillPath: written ? spillPath : null,
+    spillPath: null,
+    objectKey: written ? objectKey : null,
     artifactId: written ? artifactId : null,
   };
 }
@@ -141,22 +145,27 @@ function isOwner(metadata, context = {}) {
  * 返回指定字符区间，默认最多 4000 字符。
  */
 async function readToolSpill(artifactId, context = {}, options = {}) {
-  const spillDir = config.agent?.toolSpillDir;
-  const spillPath = resolveSpillPath(spillDir, String(artifactId || ''));
-  if (!spillPath) return { ok: false, content: '工件标识无效', artifactId: null };
-
-  let stat;
+  const id = String(artifactId || '');
+  if (!ARTIFACT_ID_RE.test(id)) return { ok: false, content: '工件标识无效', artifactId: null };
+  const objectKey = artifactObjectKey(id);
   try {
-    stat = await fs.promises.lstat(spillPath);
-    if (!stat.isFile()) return { ok: false, content: '工件不可读取', artifactId };
     const ttl = config.agent?.toolSpillTtlMs || 60 * 60 * 1000;
-    if (Date.now() - stat.mtimeMs > ttl) {
-      await fs.promises.unlink(spillPath).catch(() => {});
-      return { ok: false, content: '工件已过期', artifactId };
+    let object = await artifactStorage(config.agent?.toolSpillDir).getObject(objectKey);
+    // 兼容第一阶段旧本地工件：新工件永远优先从统一对象存储读取。
+    if (!object) {
+      const legacyPath = resolveSpillPath(config.agent?.toolSpillDir, id);
+      if (legacyPath) {
+        const stat = await fs.promises.stat(legacyPath).catch(() => null);
+        if (stat && stat.isFile()) object = { body: await fs.promises.readFile(legacyPath), lastModified: stat.mtime.toISOString() };
+      }
     }
-    const raw = await fs.promises.readFile(spillPath, 'utf8');
-    const parsed = parseSpill(raw);
-    if (!isOwner(parsed.metadata, context)) return { ok: false, content: '无权读取该工件', artifactId };
+    if (!object) return { ok: false, content: '工件不存在或已清理', artifactId: id };
+    if (object.lastModified && Date.now() - new Date(object.lastModified).getTime() > ttl) {
+      await artifactStorage(config.agent?.toolSpillDir).deleteObject(objectKey).catch(() => {});
+      return { ok: false, content: '工件已过期', artifactId: id };
+    }
+    const parsed = parseSpill(object.body.toString('utf8'));
+    if (!isOwner(parsed.metadata, context)) return { ok: false, content: '无权读取该工件', artifactId: id };
     const full = parsed.content;
     const offset = Math.max(Number.parseInt(options.offset, 10) || 0, 0);
     const limit = Math.min(Math.max(Number.parseInt(options.limit, 10) || DEFAULT_READ_LIMIT, 1), DEFAULT_READ_LIMIT);
@@ -164,16 +173,15 @@ async function readToolSpill(artifactId, context = {}, options = {}) {
     return {
       ok: true,
       content: content || '(工件该区间为空)',
-      artifactId,
+      artifactId: id,
       offset,
       limit,
       totalChars: full.length,
       hasMore: offset + content.length < full.length,
     };
   } catch (err) {
-    if (err.code === 'ENOENT') return { ok: false, content: '工件不存在或已清理', artifactId };
     logEvent('warn', 'compaction_tool_result_read_failed', { error: err.message });
-    return { ok: false, content: '工件读取失败', artifactId };
+    return { ok: false, content: '工件读取失败', artifactId: id };
   }
 }
 
@@ -181,34 +189,30 @@ async function readToolSpill(artifactId, context = {}, options = {}) {
  * 按 TTL、最大文件数和总字节数清理工件。
  */
 async function pruneSpillDir(spillDir = config.agent?.toolSpillDir) {
-  if (!spillDir) return;
-  const entries = await fs.promises.readdir(spillDir, { withFileTypes: true }).catch(() => []);
   const now = Date.now();
   const ttl = config.agent?.toolSpillTtlMs || 60 * 60 * 1000;
   const maxFiles = config.agent?.toolSpillMaxFiles || 200;
   const maxBytes = config.agent?.toolSpillMaxBytes || 64 * 1024 * 1024;
-  const files = [];
-  for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
-    const full = path.join(spillDir, entry.name);
-    const stat = await fs.promises.stat(full).catch(() => null);
-    if (!stat) continue;
-    if (now - stat.mtimeMs > ttl) {
-      await fs.promises.unlink(full).catch(() => {});
-      continue;
-    }
-    files.push({ full, mtimeMs: stat.mtimeMs, size: stat.size });
+  const storage = artifactStorage(spillDir);
+  const files = await storage.list('artifacts').catch(() => []);
+  for (const file of [...files]) {
+    const time = new Date(file.lastModified || 0).getTime();
+    if (time && now - time > ttl) await storage.deleteObject(file.key).catch(() => {});
   }
-  files.sort((a, b) => a.mtimeMs - b.mtimeMs);
-  let totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+  const active = files.filter((file) => {
+    const time = new Date(file.lastModified || 0).getTime();
+    return !time || now - time <= ttl;
+  });
+  active.sort((a, b) => new Date(a.lastModified || 0) - new Date(b.lastModified || 0));
+  let totalBytes = active.reduce((sum, file) => sum + file.size, 0);
   const toDelete = [];
-  while (files.length - toDelete.length > maxFiles || totalBytes > maxBytes) {
-    const file = files[toDelete.length];
+  while (active.length - toDelete.length > maxFiles || totalBytes > maxBytes) {
+    const file = active[toDelete.length];
     if (!file) break;
     toDelete.push(file);
     totalBytes -= file.size;
   }
-  await Promise.all(toDelete.map((file) => fs.promises.unlink(file.full).catch(() => {})));
+  await Promise.all(toDelete.map((file) => storage.deleteObject(file.key).catch(() => {})));
 }
 
 function startSpillCleanup() {

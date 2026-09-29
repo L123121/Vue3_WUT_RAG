@@ -50,9 +50,10 @@ describe("ContextCompactionService", () => {
       expect(r.content.length).toBeLessThan(1000);
       expect(r.content).toContain("已保存至");
       // 完整内容确实写入磁盘
-      const files = fs.readdirSync(tmpDir);
+      const artifactDir = path.join(tmpDir, 'artifacts');
+      const files = fs.readdirSync(artifactDir);
       expect(files.length).toBe(1);
-      const onDisk = fs.readFileSync(path.join(tmpDir, files[0]), "utf8");
+      const onDisk = fs.readFileSync(path.join(artifactDir, files[0]), "utf8");
       expect(onDisk).toContain(big.substring(0, 100));
       expect(onDisk).toContain("search_knowledge_base");
       const read = await readToolSpill(r.artifactId, {
