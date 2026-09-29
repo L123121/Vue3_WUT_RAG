@@ -325,8 +325,21 @@ module.exports = {
     maxTotalTokens: parseInt(process.env.COST_GATE_MAX_TOTAL_TOKENS, 10) || 120000,
   },
   jobs: {
+    // sqlite = 现有持久化 Job 表；redis 是可选共享协调层（通知/租约），不改变事实来源。
+    queueBackend: process.env.JOB_QUEUE_BACKEND || 'sqlite',
+    runnerEnabled: process.env.JOB_RUNNER_ENABLED !== 'false',
+    schedulerEnabled: process.env.JOB_SCHEDULER_ENABLED !== 'false',
     retentionDays: Math.max(parseInt(process.env.JOB_RETENTION_DAYS, 10) || 30, 1),
     pruneIntervalMs: Math.max(parseInt(process.env.JOB_PRUNE_INTERVAL_MS, 10) || 60 * 60 * 1000, 60 * 1000),
+  },
+  runtime: {
+    role: process.env.PROCESS_ROLE || 'api',
+  },
+  redis: {
+    url: process.env.REDIS_URL || '',
+    enabled: Boolean(process.env.REDIS_URL),
+    timeoutMs: Math.max(parseInt(process.env.REDIS_TIMEOUT_MS, 10) || 1500, 100),
+    jobsChannel: process.env.REDIS_JOBS_CHANNEL || 'wut:jobs:available',
   },
   // 管理员登录配置（密码未设置时生成随机密码，禁止空密码）
   admin: (() => {

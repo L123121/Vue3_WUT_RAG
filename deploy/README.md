@@ -88,6 +88,8 @@ vim deploy/.env.production
 
 服务启动时会自动执行 `backend/src/db/migrations/` 中的 SQLite 迁移。若迁移失败，后端不会进入正常服务状态；升级前应备份 `backend-data` volume。后台审计、Wiki 互链、上传清理和隐私留存任务写入同一 SQLite Job 表，管理员可通过 `/api/metrics/jobs` 查询失败任务并调用重试接口。
 
+第二阶段 Compose 会同时启动 `backend`、`worker`、`redis`：API 容器只处理 HTTP/SSE，Worker 容器执行 Job 和调度清理任务。Redis 用于跨实例任务通知和短租约，SQLite 仍是 Job 的事实来源；若本地直接运行且未设置 `REDIS_URL`，系统会保持第一阶段的单机兼容模式。
+
 ### 3. 配置 nginx
 
 #### HTTPS 域名部署

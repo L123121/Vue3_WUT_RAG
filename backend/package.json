@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "nodemon src/app.js",
     "start": "node src/app.js",
+    "worker": "node src/worker.js",
+    "worker:dev": "nodemon src/worker.js",
     "build": "cd .. && npm run build",
     "test": "node --experimental-vm-modules ../node_modules/vitest/vitest.mjs run --config ../vitest.backend.config.js",
     "test:watch": "node --experimental-vm-modules ../node_modules/vitest/vitest.mjs --config ../vitest.backend.config.js"

@@ -8,6 +8,7 @@ runMigrations();
 
 const { operationalMetrics } = require('./services/observability/operational-metrics.service');
 const { initTracing, shutdownTracing } = require('./services/observability/otel-tracing.service');
+const { getRedisRuntime } = require('./services/runtime/redis-runtime.service');
 // 环境变量校验已在 config/index.js 中统一处理，此处不再重复
 
 // OTel traces（OTLP 导出）：OTEL_EXPORTER_OTLP_ENDPOINT 未设置时为 Noop（不加载 SDK）
@@ -69,6 +70,7 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
     storage: 'SQLite（store.db，WAL）',
     vector: `Qdrant（${config.vectorStore.qdrantUrl}）`,
   });
+  void getRedisRuntime().probe();
 
   // 启动时初始化向量库：注册 documentProvider + 重建索引
   // DocumentService.indexingService 是懒加载，如果没人调用索引方法，
@@ -91,14 +93,15 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
     const { registerDefaultJobHandlers } = require('./services/jobs/job-handlers.service');
     const { startJobRunner } = require('./services/jobs/job.service');
     registerDefaultJobHandlers();
-    const { startUploadsCleanup } = require('./services/knowledge/file-upload.service');
-    startUploadsCleanup();
-    const { startSpillCleanup } = require('./services/conversation/context-compaction.service');
-    startSpillCleanup();
-    // 隐私留存清理：按 config.privacy 的留存天数定期清除到期日志/快照/会话
-    const { startRetentionSweeper } = require('./services/privacy/retention.service');
-    startRetentionSweeper();
-    startJobRunner();
+    if (config.jobs?.schedulerEnabled !== false) {
+      const { startUploadsCleanup } = require('./services/knowledge/file-upload.service');
+      startUploadsCleanup();
+      const { startSpillCleanup } = require('./services/conversation/context-compaction.service');
+      startSpillCleanup();
+      const { startRetentionSweeper } = require('./services/privacy/retention.service');
+      startRetentionSweeper();
+    }
+    if (config.jobs?.runnerEnabled !== false) startJobRunner();
   } catch (err) {
     logEvent('warn', 'upload_dir_cleanup_start_failed', { message: '上传目录清理任务启动失败', error: err.message });
   }

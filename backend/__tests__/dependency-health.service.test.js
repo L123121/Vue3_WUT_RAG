@@ -11,6 +11,7 @@ describe('dependency-health.service', () => {
       reranker: { status: 'ready' },
       uploads: { status: 'ready' },
       llm: { status: 'ready' },
+      redis: { status: 'disabled', enabled: false },
     });
     expect(health).toMatchObject({ status: 'ready', ready: true });
   });
@@ -23,6 +24,7 @@ describe('dependency-health.service', () => {
       reranker: { status: 'standby' },
       uploads: { status: 'ready' },
       llm: { status: 'ready' },
+      redis: { status: 'ready', enabled: true },
     })).toMatchObject({ status: 'starting', ready: false });
 
     expect(getDependencyHealth({
@@ -32,6 +34,19 @@ describe('dependency-health.service', () => {
       reranker: { status: 'standby' },
       uploads: { status: 'ready' },
       llm: { status: 'ready' },
+      redis: { status: 'ready', enabled: true },
     })).toMatchObject({ status: 'unavailable', ready: false });
+  });
+
+  it('Redis 已配置但不可用时报告降级而非阻断单机核心依赖', () => {
+    expect(getDependencyHealth({
+      sqlite: { status: 'ready' },
+      qdrant: { status: 'ready' },
+      embedding: { status: 'ready' },
+      reranker: { status: 'ready' },
+      uploads: { status: 'ready' },
+      llm: { status: 'ready' },
+      redis: { status: 'unavailable', enabled: true },
+    })).toMatchObject({ status: 'degraded', ready: true });
   });
 });

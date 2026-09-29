@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const { getDatabasePath, runMigrations } = require('../../db/migration-runner');
 const { logEvent } = require('../observability/observability.service');
+const { getRedisRuntime } = require('../runtime/redis-runtime.service');
 
 const JOB_STATUSES = new Set(['queued', 'running', 'retrying', 'succeeded', 'failed']);
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -80,6 +81,7 @@ function enqueueJob(type, payload = {}, options = {}) {
   `).run(id, String(type), JSON.stringify(payload ?? {}), maxAttempts, availableAt, idempotencyKey, now, now);
   const job = getJob(id);
   logEvent('info', 'background_job_enqueued', { jobId: id, type: String(type), idempotencyKey });
+  void getRedisRuntime().notifyJobsAvailable({ jobId: id, type: String(type) });
   return job;
 }
 
@@ -214,9 +216,9 @@ function startJobRunner(options = {}) {
         // 单个进程串行消费，避免本地 SQLite worker 自相竞争；后续迁移队列时保留接口。
         await runOneJob();
         if (Date.now() >= nextPruneAt) {
-          const removed = pruneJobs();
+          const lease = await getRedisRuntime().withLease('wut:jobs:prune', () => pruneJobs());
           nextPruneAt = Date.now() + Math.max(Number.parseInt(process.env.JOB_PRUNE_INTERVAL_MS, 10) || 60 * 60 * 1000, 60 * 1000);
-          if (removed > 0) logEvent('info', 'background_jobs_pruned', { removed });
+          if (lease.acquired && lease.value > 0) logEvent('info', 'background_jobs_pruned', { removed: lease.value, distributed: lease.distributed });
         }
       } catch (error) {
         logEvent('error', 'background_job_runner_tick_failed', { error: error.message });

@@ -39,10 +39,15 @@ services:
     environment:
 
       - QDRANT_URL=http://qdrant:6333
+      - REDIS_URL=redis://redis:6379/0
+      - PROCESS_ROLE=api
+      - JOB_RUNNER_ENABLED=false
+      - JOB_SCHEDULER_ENABLED=false
       # 旧镜像不含 @qdrant/js-client-rest：通过 NODE_PATH 指向独立依赖目录，不动镜像自带 node_modules
       - NODE_PATH=/app/qdrant-deps/node_modules
     depends_on:
       - qdrant
+      - redis
     volumes:
       - backend-data:/app/backend/data      # SQLite 数据库持久化（应用数据目录为 /app/backend/data，挂错会导致容器重建后读到空库）
       - uploads-data:/app/backend/uploads   # 上传文件临时目录
@@ -71,6 +76,39 @@ services:
       retries: 3
       start_period: 30s
 
+  worker:
+    image: ${BACKEND_IMAGE:-wuli-elf-backend:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["node", "backend/src/worker.js"]
+    env_file:
+      - ./deploy/.env.production
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - REDIS_URL=redis://redis:6379/0
+      - PROCESS_ROLE=worker
+      - JOB_RUNNER_ENABLED=true
+      - JOB_SCHEDULER_ENABLED=true
+    depends_on:
+      - qdrant
+      - redis
+    volumes:
+      - backend-data:/app/backend/data
+      - uploads-data:/app/backend/uploads
+      - ./ragdata:/app/ragdata:ro
+      - ./.model-cache:/app/.model-cache:ro
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
   # ---- Qdrant 向量数据库（独立服务） ----
   qdrant:
     image: qdrant/qdrant:v1.12.5  # 服务器本地已有该镜像（registry 镜像源拉不到 latest）
@@ -96,4 +134,6 @@ volumes:
   nginx-logs:
     driver: local
   qdrant-storage:
+    driver: local
+  redis-data:
     driver: local

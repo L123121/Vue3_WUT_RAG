@@ -6,6 +6,7 @@ const config = require('../../config');
 const { getEmbeddingHealth } = require('../knowledge/embedding.service');
 const { getRerankerHealth } = require('../knowledge/reranker.service');
 const { getDatabasePath } = require('../../db/migration-runner');
+const { getRedisRuntime } = require('../runtime/redis-runtime.service');
 
 const UPLOAD_DIR = path.join(__dirname, '../../uploads');
 
@@ -57,6 +58,7 @@ function getDependencyHealth(options = {}) {
   const reranker = options.reranker || getRerankerHealth();
   const sqlite = options.sqlite || checkSqlite(options.dbPath);
   const uploads = options.uploads || checkDirectory(options.uploadDir);
+  const redis = options.redis || getRedisRuntime().getHealth();
   const hasApi = Boolean(config.ai?.apiKey);
   const llm = options.llm || {
     status: hasApi ? 'ready' : 'degraded',
@@ -64,11 +66,12 @@ function getDependencyHealth(options = {}) {
     mode: hasApi ? 'online' : 'mock',
     model: config.ai?.model || config.DEFAULT_AI_MODEL,
   };
-  const dependencies = { sqlite, qdrant: normalizeVectorHealth(vectorStore), embedding, reranker, llm, uploads };
+  const dependencies = { sqlite, qdrant: normalizeVectorHealth(vectorStore), embedding, reranker, llm, uploads, redis };
   const required = [sqlite, dependencies.qdrant, embedding, uploads];
   const unavailable = required.filter((item) => item.status === 'unavailable');
   const starting = required.filter((item) => item.status === 'starting');
-  const degraded = required.some((item) => item.status === 'degraded') || llm.status === 'degraded' || reranker.status === 'degraded';
+  const degraded = required.some((item) => item.status === 'degraded') || llm.status === 'degraded' || reranker.status === 'degraded'
+    || (redis.enabled === true && redis.status === 'unavailable');
   return {
     status: unavailable.length > 0 ? 'unavailable' : starting.length > 0 ? 'starting' : degraded ? 'degraded' : 'ready',
     ready: unavailable.length === 0 && starting.length === 0,

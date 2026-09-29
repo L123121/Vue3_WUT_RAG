@@ -235,6 +235,16 @@ npm run dev
 - 后台任务：质量审计、Wiki 互链、上传清理和隐私留存使用 SQLite 持久化 Job，管理员可通过 `/api/metrics/jobs` 查看失败任务并重试。
 - 数据库迁移：服务启动时执行 `backend/src/db/migrations/` 中的版本化迁移；迁移失败会阻止服务启动，避免半升级状态接收流量。
 - 手动执行数据库迁移：`npm run db:migrate`。
+- 第二阶段运行模式：可配置 `REDIS_URL` 启用跨实例 Job 通知与短租约；容器部署时 API 与 Worker 分离，Worker 通过 `npm --prefix backend run worker` 执行后台任务。未配置 Redis 时保留 SQLite 单机兼容模式。
+
+容器部署的运行关系：
+
+```text
+backend API  ── 写入 SQLite background_jobs / 通知 Redis
+worker       ── 执行 Job、调度清理任务、使用 Redis lease 防止重复维护
+Redis        ── 跨实例通知与短租约（不是业务数据主库）
+SQLite       ── Job、会话等现阶段事实来源
+```
 
 ## 常用命令
 

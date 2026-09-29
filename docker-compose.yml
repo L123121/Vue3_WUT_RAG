@@ -45,8 +45,13 @@ services:
     environment:
       - VECTOR_STORE_BACKEND=qdrant
       - QDRANT_URL=http://qdrant:6333
+      - REDIS_URL=redis://redis:6379/0
+      - PROCESS_ROLE=api
+      - JOB_RUNNER_ENABLED=false
+      - JOB_SCHEDULER_ENABLED=false
     depends_on:
       - qdrant
+      - redis
     volumes:
       - backend-data:/app/backend/data      # SQLite 数据持久化
       - uploads-data:/app/backend/uploads   # 上传文件临时目录
@@ -72,6 +77,62 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  # ---- 后台 Worker（任务执行与定时任务） ----
+  worker:
+    image: ${BACKEND_IMAGE:-wuli-elf-backend:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["node", "backend/src/worker.js"]
+    env_file:
+      - ./deploy/.env.production
+    environment:
+      - VECTOR_STORE_BACKEND=qdrant
+      - QDRANT_URL=http://qdrant:6333
+      - REDIS_URL=redis://redis:6379/0
+      - PROCESS_ROLE=worker
+      - JOB_RUNNER_ENABLED=true
+      - JOB_SCHEDULER_ENABLED=true
+    depends_on:
+      - qdrant
+      - redis
+    volumes:
+      - backend-data:/app/backend/data
+      - uploads-data:/app/backend/uploads
+      - ./ragdata:/app/ragdata:ro
+      - ./.model-cache:/app/.model-cache:ro
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: ${WORKER_CPU_LIMIT:-2.0}
+          memory: ${WORKER_MEM_LIMIT:-2g}
+
+  # ---- Redis（跨实例通知与短租约；SQLite 仍是 Job 事实来源） ----
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   # ---- Qdrant 向量数据库（独立服务） ----
   # ⚠️ 版本固定 v1.12.5：segment.json 使用旧版 on_disk 存储格式，
@@ -102,4 +163,6 @@ volumes:
   uploads-data:
     driver: local
   qdrant-storage:
+    driver: local
+  redis-data:
     driver: local
