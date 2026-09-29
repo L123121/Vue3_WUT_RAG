@@ -20,6 +20,7 @@ const {
   ensureEventLoopMonitor,
 } = require('../services/observability/prometheus-metrics.service');
 const { logEvent } = require('../services/observability/observability.service');
+const { listJobs, retryJob } = require('../services/jobs/job.service');
 
 const router = express.Router();
 
@@ -112,6 +113,22 @@ router.get('/runs/:runId/events', requireAuth, async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+// 后台任务运维接口：只暴露管理员可见的状态、错误和重试入口，不返回任务 payload 中的用户正文。
+router.get('/jobs', requireAuth, (req, res) => {
+  if (req.role !== 'admin') return res.status(403).json({ success: false, error: '需要管理员权限' });
+  const status = req.query.status ? String(req.query.status) : undefined;
+  const jobs = listJobs({ status, limit: req.query.limit });
+  res.json({ success: true, data: jobs.map(({ payload, ...safe }) => ({ ...safe, hasPayload: Object.keys(payload || {}).length > 0 })) });
+});
+
+router.post('/jobs/:jobId/retry', requireAuth, (req, res) => {
+  if (req.role !== 'admin') return res.status(403).json({ success: false, error: '需要管理员权限' });
+  const job = retryJob(req.params.jobId);
+  if (!job) return res.status(404).json({ success: false, error: '任务不存在或当前不可重试' });
+  const { payload, ...safe } = job;
+  res.json({ success: true, data: { ...safe, hasPayload: Object.keys(payload || {}).length > 0 } });
 });
 
 router.get('/dashboard', requireAuth, async (req, res, next) => {

@@ -395,9 +395,12 @@ export function useStreaming() {
     const convStore = useConversationStore();
     const conv = convStore.currentConversation;
     if (!conv) return;
-    const msg = conv.messages?.find((m) => m.id === msgId);
+    const msgIndex = conv.messages?.findIndex((m) => m.id === msgId) ?? -1;
+    if (msgIndex === -1) return;
+    const msg = conv.messages[msgIndex];
     if (!msg || msg.role !== 'user' || !msg.canRetry) return;
-    msg.canRetry = false;
+    // 不可变更新（MessageList 对已固化气泡做 v-memo，原地改字段不会被感知）
+    conv.messages[msgIndex] = { ...msg, canRetry: false };
     // 带上原消息的附件：文件内容只在 fileData.textContent 里拼进请求体，
     // 丢失附件的重试等于换了一个问题再问一遍
     await sendMessage(getMessageText(msg), msgId, msg.files?.[0] || null);
@@ -412,10 +415,12 @@ export function useStreaming() {
     const conv = convStore.currentConversation;
     const trimmed = String(newText || '').trim();
     if (!conv || !trimmed || isLoading.value) return;
-    const msg = conv.messages?.find((m) => m.id === msgId);
+    const msgIndex = conv.messages?.findIndex((m) => m.id === msgId) ?? -1;
+    if (msgIndex === -1) return;
+    const msg = conv.messages[msgIndex];
     if (!msg || msg.role !== 'user') return;
-    msg.content = trimmed;
-    msg.text = trimmed; // 兼容旧渲染字段
+    // 不可变更新（同 retryMessage：v-memo 依赖消息对象引用）
+    conv.messages[msgIndex] = { ...msg, content: trimmed, text: trimmed };
     await sendMessage(trimmed, msgId, msg.files?.[0] || null);
   };
 

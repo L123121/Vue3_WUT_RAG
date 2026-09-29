@@ -4,12 +4,13 @@ const { logEvent } = require('./observability.service');
 
 const fs = require('fs');
 const path = require('path');
+const { getDatabasePath } = require('../../db/migration-runner');
 
-const DEFAULT_DB_PATH = path.join(__dirname, '../../data/store.db');
+const DEFAULT_DB_PATH = getDatabasePath();
 
 class OperationalMetricsPersistence {
   constructor(options = {}) {
-    this.dbPath = options.dbPath || process.env.OPS_METRICS_DB_PATH || DEFAULT_DB_PATH;
+    this.dbPath = options.dbPath || process.env.OPS_METRICS_DB_PATH || getDatabasePath() || DEFAULT_DB_PATH;
     fs.mkdirSync(path.dirname(this.dbPath), { recursive: true });
 
     const Database = options.Database || require('better-sqlite3');

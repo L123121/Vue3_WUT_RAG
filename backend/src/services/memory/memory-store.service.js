@@ -4,9 +4,10 @@ const { logEvent } = require('../observability/observability.service');
 
 const path = require('path');
 const fs = require('fs');
+const { getDatabasePath } = require('../../db/migration-runner');
 
 const DATA_DIR = path.join(__dirname, '../../data');
-const DB_FILE = path.join(DATA_DIR, 'store.db');
+const DB_FILE = getDatabasePath();
 const LEGACY_FILE = path.join(DATA_DIR, 'store.json');
 
 /**
@@ -20,7 +21,6 @@ class SQLiteStore {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
 
-    const exists = fs.existsSync(DB_FILE);
     const Database = require('better-sqlite3');
     this._db = new Database(DB_FILE);
 
@@ -61,8 +61,14 @@ class SQLiteStore {
       delList: this._db.prepare('DELETE FROM list WHERE key = ?'),
     };
 
-    // 首次启动时从旧 store.json 迁移
-    if (!exists && fs.existsSync(LEGACY_FILE)) {
+    // migration runner 会先创建 store.db，因此不能再用“数据库文件不存在”判断旧数据迁移。
+    // 只有当前 KV 表为空时才导入旧 store.json，避免覆盖已有 SQLite 数据。
+    const hasKvData = this._db.prepare(`
+      SELECT EXISTS(SELECT 1 FROM hash LIMIT 1)
+        OR EXISTS(SELECT 1 FROM sets LIMIT 1)
+        OR EXISTS(SELECT 1 FROM list LIMIT 1) AS present
+    `).get()?.present;
+    if (!hasKvData && fs.existsSync(LEGACY_FILE)) {
       this._migrateFromLegacy(LEGACY_FILE);
     }
   }

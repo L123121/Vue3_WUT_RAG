@@ -1,7 +1,7 @@
 "use strict";
 
 const { applicationContainer } = require("../bootstrap/container");
-const { recordAudit } = require("../services/agent/quality-governance.service");
+const jobService = require('../services/jobs/job.service');
 const {
   createStreamContext,
   writeRunCompleted,
@@ -13,7 +13,8 @@ const {
 const { logEvent } = require("../services/observability/observability.service");
 const { emptyDraft, applyEvent, finalize } = require("../utils/decision-draft");
 
-function createChatHandlers(conversationOrchestrator) {
+function createChatHandlers(conversationOrchestrator, dependencies = {}) {
+  const enqueueJob = dependencies.enqueueJob || jobService.enqueueJob;
   const streamHandler = async (req, res, next) => {
     let abortController = null;
     let onClientClose = null;
@@ -67,14 +68,18 @@ function createChatHandlers(conversationOrchestrator) {
       audit.answer = finalAnswer;
 
       writeRunCompleted(res, streamContext);
-      void recordAudit({
-        question: message,
-        answer: audit.answer,
-        sources: audit.sources,
-        traceId: audit.traceId,
-        userId: req.userId,
-        route: audit.sources.length ? "rag-stream" : "chat-stream",
-      }).catch((error) => logEvent("warn", "quality_audit_record_failed", { scope: "chat_stream", error: error.message }));
+      try {
+        enqueueJob('quality.audit', {
+          question: message,
+          answer: audit.answer,
+          sources: audit.sources,
+          traceId: audit.traceId,
+          userId: req.userId,
+          route: audit.sources.length ? "rag-stream" : "chat-stream",
+        }, { idempotencyKey: `audit:${audit.traceId}:${streamContext.runId}` });
+      } catch (error) {
+        logEvent("warn", "quality_audit_job_enqueue_failed", { scope: "chat_stream", error: error.message });
+      }
       cleanupClientClose();
       res.end();
     } catch (error) {

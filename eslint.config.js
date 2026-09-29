@@ -118,6 +118,20 @@ export default [
     },
   },
   {
+    // scripts/ 下的 CLI 评测/运维脚本：console 即产品输出，Node 18+ 全局 fetch/Blob/FormData
+    files: ['scripts/**/*.mjs', 'scripts/**/*.cjs', 'scripts/**/*.js'],
+    languageOptions: {
+      globals: {
+        ...nodeGlobals,
+        Blob: 'readonly',
+        FormData: 'readonly',
+      },
+    },
+    rules: {
+      'no-console': 'off',
+    },
+  },
+  {
     ignores: ['dist/**', 'node_modules/**', 'backend/node_modules/**', '.claude/**'],
   },
 ];

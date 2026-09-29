@@ -41,6 +41,11 @@ export function createMessagePatchHandlers({ writeMessage, conversationId, aiMsg
       // 运行时引用校验：溯源覆盖率随收尾下发，MessageBubble 展示"已溯源 xx%"徽标
       writeMessage(conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'grounding', grounding));
     },
+    onFaithfulnessGate: (gate) => {
+      // faithfulness 硬门禁：这里只挂载 gate（warn 展示警示条）；enforce 的正文替换
+      // 延迟到 onDone 最终 flush 之后（streamInvocation），否则会被 RAF 刷屏覆盖
+      writeMessage(conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'faithfulnessGate', gate));
+    },
     onUsage: (usage) => {
       // token 用量随收尾下发，MessageBubble 展示输入/输出 token
       writeMessage(conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'usage', usage));

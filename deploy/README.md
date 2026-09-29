@@ -86,6 +86,8 @@ vim deploy/.env.production
 
 > `deploy/.env.production` 包含敏感信息，不要提交到 Git。SQLite 无需额外配置，数据自动持久化到 `backend-data` volume。
 
+服务启动时会自动执行 `backend/src/db/migrations/` 中的 SQLite 迁移。若迁移失败，后端不会进入正常服务状态；升级前应备份 `backend-data` volume。后台审计、Wiki 互链、上传清理和隐私留存任务写入同一 SQLite Job 表，管理员可通过 `/api/metrics/jobs` 查询失败任务并调用重试接口。
+
 ### 3. 配置 nginx
 
 #### HTTPS 域名部署
@@ -142,8 +144,12 @@ docker compose -p wuli-elf logs -f
 健康检查：
 
 ```bash
+curl http://localhost:3000/api/live
+curl http://localhost:3000/api/ready
 curl http://localhost:3000/api/health
 ```
+
+`/api/live` 只检查进程存活；`/api/ready` 检查 SQLite、Qdrant、Embedding 等核心依赖是否已就绪，Docker healthcheck 和部署脚本使用 `/api/ready`；`/api/health` 用于查看详细降级状态。
 
 浏览器访问：
 

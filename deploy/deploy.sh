@@ -114,7 +114,7 @@ ssh "$REMOTE_USER@$REMOTE_HOST" << EOF
   # 等待后端健康检查通过
   echo "等待后端启动..."
   for i in \$(seq 1 12); do
-    if curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+    if curl -sf http://localhost:3000/api/ready > /dev/null 2>&1; then
       echo "✅ 后端启动成功"
       break
     fi

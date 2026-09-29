@@ -460,6 +460,53 @@ class QdrantVectorStore {
     return !!this._client;
   }
 
+  /**
+   * 同步健康快照：不发起网络请求、不触发重建，只反映最近一次连接状态。
+   * /ready 使用它避免健康探针本身制造 Qdrant 请求风暴。
+   */
+  getHealth() {
+    if (this._connected && this._client) {
+      if (this._initializing || !this._readyChecked) {
+        return {
+          status: 'starting',
+          connected: true,
+          initialized: this._ready,
+          readyChecked: this._readyChecked,
+          initializing: this._initializing,
+          pointCount: this._pointCount,
+          collection: this.collectionName,
+        };
+      }
+      return {
+        status: 'ready',
+        connected: true,
+        initialized: this._ready,
+        readyChecked: this._readyChecked,
+        initializing: this._initializing,
+        pointCount: this._pointCount,
+        collection: this.collectionName,
+      };
+    }
+    if (!this._ready) {
+      return {
+        status: 'starting',
+        connected: false,
+        initialized: false,
+        readyChecked: false,
+        initializing: this._initializing,
+        collection: this.collectionName,
+      };
+    }
+    return {
+      status: 'unavailable',
+      connected: false,
+      initialized: true,
+      readyChecked: this._readyChecked,
+      initializing: this._initializing,
+      collection: this.collectionName,
+    };
+  }
+
   // ==================== 工具 ====================
 
   _toPointId(originalId) {

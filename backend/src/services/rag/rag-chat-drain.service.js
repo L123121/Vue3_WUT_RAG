@@ -21,6 +21,7 @@ async function drainChat(svc, message, history = [], options = {}) {
   let usage = null;
   let processCard = null;
   let grounding = null;
+  let faithfulnessGate = null;
   let followups = [];
   let trace = null;
   let pipelineMeta = null;
@@ -38,6 +39,11 @@ async function drainChat(svc, message, history = [], options = {}) {
         processCard = event.processCard || null;
       } else if (event.type === 'grounding') {
         grounding = event.grounding || null;
+      } else if (event.type === 'faithfulness_gate') {
+        // faithfulness 硬门禁（enforce）：低溯源回答在这里被真正拦截——
+        // reply 替换为拒答文案，原文不返回给非流式调用方（评测/Agent 工具）
+        faithfulnessGate = event.gate || null;
+        if (event.gate?.action === 'block' && event.gate.refusalText) reply = event.gate.refusalText;
       } else if (event.type === 'followups') {
         followups = event.items || [];
       } else if (event.type === 'trace') {
@@ -105,6 +111,7 @@ async function drainChat(svc, message, history = [], options = {}) {
     rewrittenQuery,
     retrieval,
     grounding: grounding || null,
+    faithfulnessGate: faithfulnessGate || null,
     processCard: processCard || null,
     followups,
     traceId: trace?.traceId || null,

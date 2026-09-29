@@ -20,7 +20,7 @@ async function quotaMiddleware(req, res, next) {
   // 仅对需要消耗 LLM 配额的路由启用
   // 在白名单中的路径跳过配额检查
   const skipPaths = [
-    "/api/health",
+    "/api/live", "/api/ready", "/api/health",
     "/api/auth/login", "/api/auth/register", "/api/auth/logout", "/api/auth/me",
     "/api/metrics",
     "/api/rag/stats", "/api/rag/documents",

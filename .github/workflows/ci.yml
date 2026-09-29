@@ -89,6 +89,18 @@ jobs:
       - name: Dataset & manifest integrity
         run: npm run eval:dataset-check
 
+      - name: Validate quality gate script
+        run: |
+          mkdir -p /tmp/wut-quality-gate
+          printf '{"aggregate":{"recall@5":0.95,"faithfulness":0.90}}' > /tmp/wut-quality-gate/report.json
+          RAG_GATE_MIN_RECALL5=0.80 RAG_GATE_MIN_FAITHFULNESS=0.80 npm run eval:quality-gate -- /tmp/wut-quality-gate/report.json
+
+      - name: Validate migration and job assets
+        run: |
+          test -f backend/src/db/migrations/001_initial_schema.sql
+          test -f backend/src/db/migrations/002_background_jobs.sql
+          test -f backend/src/services/jobs/job.service.js
+
       - name: Audit production dependencies
         run: |
           npm audit --omit=dev --audit-level=high

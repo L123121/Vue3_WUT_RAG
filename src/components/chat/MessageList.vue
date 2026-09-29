@@ -130,11 +130,22 @@ defineExpose({ scrollToBottom, shouldAutoScroll });
       <!-- content-visibility: 视口外的历史气泡跳过渲染与布局（含 Markdown 高亮/净化），
            等效轻量虚拟化；contain-intrinsic-size 提供占位高度，滚动条不跳动。
            当前流式气泡显式排除，保证逐帧高度更新不被跳过。 -->
+      <!-- v-memo: 流式期间 messages 数组每帧被替换，无 memo 时全部历史气泡都要走一遍
+           vnode diff。以消息对象引用为依赖（写入路径全部不可变替换，见 updateMessage /
+           retryMessage），已固化气泡在流式帧里被整个跳过——content-visibility 省的是
+           布局与绘制，v-memo 省的是 vnode 创建与 diff，两层互补。
+           依赖里带上"是否流式中"与 decisionDraft：流式切换时修正 content-visibility
+           排除样式，决策草稿逐帧变化只重渲染当前流式气泡。 -->
       <div
-        v-for="(item, index) in messages"
+        v-for="item in messages"
         :key="item.id"
         :id="`msg-${item.id}`"
-        :data-index="index"
+        v-memo="[
+          item,
+          previousUserMessageById.get(item.id),
+          item.id === currentStreamingId,
+          item.id === currentStreamingId ? decisionDraft : '',
+        ]"
         :style="item.id === currentStreamingId
           ? { containIntrinsicSize: 'auto 120px' }
           : { contentVisibility: 'auto', containIntrinsicSize: 'auto 120px' }"

@@ -42,6 +42,7 @@ describe('rag.controller ragChatStream', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(require('../src/services/jobs/job.service'), 'enqueueJob').mockImplementation(() => null);
   });
 
   it('SSE 响应头发送失败时将原始错误交给 next', async () => {

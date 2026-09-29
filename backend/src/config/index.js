@@ -204,6 +204,11 @@ module.exports = {
     // 运行时引用校验（防幻觉兜底）：生成后逐句对照 RAG 上下文，低溯源回答标注 level=low
     groundingEnabled: process.env.RAG_GROUNDING_ENABLED !== 'false',
     groundingMinSupport: Number.parseFloat(process.env.RAG_GROUNDING_MIN_SUPPORT || '0.35'),
+    // faithfulness 硬门禁（2026-09-28）：off=仅标注（现状） / warn=低溯源回答发警示事件 /
+    // enforce=低溯源回答拦截（流式前端替换拒答文案，非流式 drain 直接替换 reply）
+    faithfulnessGateMode: process.env.RAG_FAITHFULNESS_GATE || 'off',
+    // 整篇回答的可信阈值：溯源句占比低于该值才触发门禁（与单句 minSupport 解耦）
+    faithfulnessGateMinCoverage: Number.parseFloat(process.env.RAG_FAITHFULNESS_GATE_MIN_COVERAGE || '0.35'),
     // 跨文档问题分解：对比/列举类问题拆实体级子查询扩大召回池（reranker 仍按原问题打分）
     queryDecomposeEnabled: process.env.RAG_QUERY_DECOMPOSE_ENABLED !== 'false',
     queryDecomposeMaxSubQueries: parseInt(process.env.RAG_DECOMPOSE_MAX_SUB_QUERIES, 10) || 3,
@@ -311,6 +316,17 @@ module.exports = {
   quota: {
     dailyLimit: parseInt(process.env.QUOTA_DAILY_LIMIT, 10) || 100,
     anonymousLimit: parseInt(process.env.QUOTA_ANONYMOUS_LIMIT, 10) || 20,
+  },
+  // 请求级 LLM 成本硬门禁：单次请求的 LLM 调用数 / token 总量超限后，
+  // 后续调用 fail-closed（上游各链路均有降级路径）。默认阈值宽松，只拦截失控循环
+  costGate: {
+    enabled: process.env.COST_GATE_ENABLED !== 'false',
+    maxLlmCalls: parseInt(process.env.COST_GATE_MAX_LLM_CALLS, 10) || 16,
+    maxTotalTokens: parseInt(process.env.COST_GATE_MAX_TOTAL_TOKENS, 10) || 120000,
+  },
+  jobs: {
+    retentionDays: Math.max(parseInt(process.env.JOB_RETENTION_DAYS, 10) || 30, 1),
+    pruneIntervalMs: Math.max(parseInt(process.env.JOB_PRUNE_INTERVAL_MS, 10) || 60 * 60 * 1000, 60 * 1000),
   },
   // 管理员登录配置（密码未设置时生成随机密码，禁止空密码）
   admin: (() => {

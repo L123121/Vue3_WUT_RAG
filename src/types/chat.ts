@@ -16,6 +16,7 @@ export type MessageFragmentType =
   | 'decision-badge'
   | 'intent-badge'
   | 'grounding-badge'
+  | 'faithfulness-gate'
   | 'usage'
   | 'followups'
   | 'agent-tools'
@@ -97,6 +98,7 @@ export interface ChatMessage {
   decision?: Record<string, unknown>;
   intent?: Record<string, unknown>;
   grounding?: Record<string, unknown> | null;
+  faithfulnessGate?: Record<string, unknown> | null;
   usage?: UsageInfo | null;
   followups?: unknown[];
   toolCalls?: unknown[] | null;

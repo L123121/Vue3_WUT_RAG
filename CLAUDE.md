@@ -438,6 +438,14 @@ chat.store（聚合层）→ 页面统一接口
 - 落地方式：先派子代理执行收敛（本轮第四次因 "model concurrency limit exceeded" 失败），改由主会话自做——codemod 脚本（精确原文替换 + require 自动插入 + CRLF 兼容）批量迁移，残留人工收尾；⚠️ 排坑：require 自动插入的锚点扫描会命中**函数内懒加载 require**（file-upload/embedding/reranker 等 8 文件中招，logEvent 被插进函数作用域导致其余调用点 no-undef），已全部收敛到模块顶层
 - 测试：backend 全量 503 用例、integration 子集（forks 隔离）通过；`lint:check` 清零；前端未触碰（114 用例不受影响）
 
+**26. 三大件收尾：语料重入库 runbook + 请求级成本硬门禁 + faithfulness 硬门禁 + 消息列表 v-memo（2026-09-28）**
+
+- ① 语料重入库（`scripts/rag-eval/reingest-corpus.mjs`，`npm run eval:corpus-reingest`）：按 corpus-manifest 把 ragdata 源文件重建为确定性 ID 文档。默认演练打印计划，`--write` 执行、`--prune` 删清单外文档、`--force` 强制重建已对齐文档。标题/类别精确取自清单（不再像 upload-ragdata.js 那样猜测），**先删旧 UUID 文档再上传**——sha256 内容去重否则会把新上传映射回旧 ID 文档。认证 RAG_EVAL_COOKIE 优先，否则用 backend/.env 的 JWT_SECRET 铸 admin JWT；终检与 verify-corpus 同口径，未对齐退出码 1。`api-client.listDocuments` 顺带补 `limit=500`（默认 limit=20 会把重入库后的 29 篇截断，verify-corpus 会误报缺失）。README「对齐状态」同步更新（原记录中"5 篇不在清单内"已过时——现清单 29 篇含全部历史语料）。执行前提：后端 + Qdrant 可用（本地验证时未启动，脚本待服务可用后一键跑）。
+- ② 请求级 LLM 成本硬门禁（`llm/cost-budget.service.js`）：AsyncLocalStorage 建立请求作用域预算（中间件置于 traceId 生成之后），ai.service 两个入口统一 `assertWithinBudget`（超限抛 `CostBudgetExceededError`，fail-closed）+ `beginLlmCall`/`addUsage` 记账——业务链路零改动。旋钮 `COST_GATE_ENABLED`（默认开）/`COST_GATE_MAX_LLM_CALLS`(16)/`COST_GATE_MAX_TOTAL_TOKENS`(120000)，阈值宽松只拦截失控循环。豁免：记忆提取/压缩、百科互链编译三个后台增强任务用 `runWithoutBudget` 隔离（各有正则/降级兜底）；摘要压缩走独立 judge Key 不计。`operationalMetrics.recordCostGateExceeded` 计数 + snapshot.costGate。
+- ③ faithfulness 硬门禁（`rag/faithfulness-gate.service.js`）：在 grounding 标注之上叠加门禁决策。`RAG_FAITHFULNESS_GATE=off`（默认，完全现状）| `warn`（低溯源回答发 `faithfulness.gate` SSE 事件，前端琥珀警示条）| `enforce`（block：流式由前端在 onDone 最终 flush 后把气泡正文替换为拒答文案——gate 事件先于 [DONE] 到达而 RAF 此刻才刷屏，替换必须延后否则被覆盖；非流式 drain 路径直接替换 reply，未过校验的回答不返给调用方）。阈值 `RAG_FAITHFULNESS_GATE_MIN_COVERAGE`(0.35) 与单句 minSupport 解耦。前端链路：runEvents 类型映射 + chat.js 分发 + messagePatches 挂载 + faithfulness-gate fragment 横幅；`clearMessageAttemptState` 清 gate 防重试串扰。
+- ④ 消息列表进一步虚拟化（MessageList.vue）：content-visibility 只省布局/绘制，Vue 仍为全部历史气泡做 vnode diff——流式期间 messages 数组每帧被替换，开销被放大 N 倍。已固化气泡加 `v-memo`（依赖：消息对象引用 + 对应问题消息 + 是否流式中 + decisionDraft），流式帧里只有当前流式气泡参与 diff。前提是消息写入全链路不可变（updateMessage/applyFlush 本就如此；retryMessage/editAndResend 两处用户消息原地突变改为数组元素替换）。DynamicScroller 前车之鉴（流式跳动）不再重蹈：DOM 结构与滚动行为零变化。
+- 测试：`cost-budget.test.js`(7)、`faithfulness-gate.test.js`(8，含 drainChat block 拦截)；前端补 runEvents.gate 分发、patch 规则、fragment 派生、重试清 gate 断言。后端 fast 533 用例、前端全部用例通过；`lint:check`/`typecheck`/`build` 清零。
+
 ### ❌ 尝试但退回
 
 **BM25 Function（2025-07-14）**
@@ -549,6 +557,15 @@ RAG_MAX_CONTEXT_LENGTH=6000
 RAG_GROUNDING_ENABLED=true
 RAG_GROUNDING_MIN_SUPPORT=0.35   # 句子判定"已溯源"的 bigram 覆盖率阈值
 
+# faithfulness 硬门禁（2026-09-28）：off=仅标注（默认）/ warn=警示条 / enforce=拦截替换拒答文案
+RAG_FAITHFULNESS_GATE=off
+RAG_FAITHFULNESS_GATE_MIN_COVERAGE=0.35  # 整篇回答溯源句占比低于该值触发门禁
+
+# 请求级 LLM 成本硬门禁（2026-09-28）：超限后该请求后续 LLM 调用 fail-closed
+COST_GATE_ENABLED=true
+COST_GATE_MAX_LLM_CALLS=16
+COST_GATE_MAX_TOTAL_TOKENS=120000
+
 # 跨文档问题分解（对比/列举类拆实体级子查询扩召回）
 RAG_QUERY_DECOMPOSE_ENABLED=true
 RAG_DECOMPOSE_MAX_SUB_QUERIES=3
@@ -601,6 +618,10 @@ RAG_EVAL_COOKIE="auth_token=..." node eval-retrieval.js
 # 新数据集检索/规则评测
 # ⚠️ 用 DATASET_PATH 环境变量指定数据集；runRetrievalEval 的 datasetPath 参数不生效（脚本只读 DATASET_PATH）
 DATASET_PATH=dataset/full-coverage-qa.json RAG_EVAL_COOKIE="auth_token=..." node eval-retrieval.js
+
+# 语料重入库（按清单重建确定性 ID 文档；先演练核对计划，--write 执行）
+npm run eval:corpus-reingest
+npm run eval:corpus-reingest -- --write
 ```
 
 评测数据：

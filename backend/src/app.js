@@ -1,6 +1,11 @@
 require('dotenv').config();
 const express = require('express');
 const config = require('./config');
+const { runMigrations } = require('./db/migration-runner');
+
+// 所有服务依赖 SQLite 前先完成版本化迁移；失败时阻止进程启动，避免半升级状态接收流量。
+runMigrations();
+
 const { operationalMetrics } = require('./services/observability/operational-metrics.service');
 const { initTracing, shutdownTracing } = require('./services/observability/otel-tracing.service');
 // 环境变量校验已在 config/index.js 中统一处理，此处不再重复
@@ -78,11 +83,14 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
     const vectorCount = await vectorStore.count();
     logEvent('info', 'vector_store_init_done', { vectorCount });
   } catch (err) {
-    logEvent('warn', 'vector_store_init_failed', { message: '向量库初始化失败（不影响启动）', error: err.message });
+    logEvent('warn', 'vector_store_init_failed', { message: '向量库初始化失败（服务进入降级状态）', error: err.message });
   }
 
   // 上传目录定期清理（聊天上传孤儿文件，7 天过期）
   try {
+    const { registerDefaultJobHandlers } = require('./services/jobs/job-handlers.service');
+    const { startJobRunner } = require('./services/jobs/job.service');
+    registerDefaultJobHandlers();
     const { startUploadsCleanup } = require('./services/knowledge/file-upload.service');
     startUploadsCleanup();
     const { startSpillCleanup } = require('./services/conversation/context-compaction.service');
@@ -90,6 +98,7 @@ const server = app.listen(PORT, '0.0.0.0', async () => {
     // 隐私留存清理：按 config.privacy 的留存天数定期清除到期日志/快照/会话
     const { startRetentionSweeper } = require('./services/privacy/retention.service');
     startRetentionSweeper();
+    startJobRunner();
   } catch (err) {
     logEvent('warn', 'upload_dir_cleanup_start_failed', { message: '上传目录清理任务启动失败', error: err.message });
   }
@@ -104,6 +113,9 @@ async function shutdown(signal, exitCode = 0) {
   operationalMetrics.flush();
   try { require('./services/conversation/context-compaction.service').stopSpillCleanup(); } catch { /* 清理器未启动时忽略 */ }
   try { require('./services/privacy/retention.service').stopRetentionSweeper(); } catch { /* 清理器未启动时忽略 */ }
+  try { require('./services/knowledge/file-upload.service').stopUploadsCleanup(); } catch { /* 清理器未启动时忽略 */ }
+  try { require('./services/jobs/job.service').stopJobRunner(); } catch { /* 任务执行器未启动时忽略 */ }
+  try { await require('./services/jobs/job.service').closeJobStore(); } catch { /* 任务数据库未打开时忽略 */ }
   await shutdownTracing();
   server.close(() => {
     operationalMetrics.close();

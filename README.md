@@ -111,7 +111,7 @@ flowchart TD
 - **融合策略消融**：RRF(k=10) 与加权融合打平（Recall 同为 97.4%，MRR/nDCG@5 微弱领先 0.007/0.004，属噪声级差异）；RRF(k=60) 因排名差异被过度压扁明显劣化（Recall 74.5%），最终默认保留加权融合。
 - **MMR 消融**：修复前默认 MMR 使 Recall 降至 80.7%（相关父段被多样性排序挤出截断窗口），修复后 MMR 与关闭 MMR 均达 97.4%。
 - **生成质量**（RAGAS，campus-qa 32 题，judge 模型 step-3.7-flash）：Faithfulness **91.7%**、Context Recall **81.5%**。
-- **零成本防线**：grounding 句级 bigram 覆盖率校验、正则 query 分解、入库 prompt-injection 清洗均不消耗模型调用。
+- **零成本防线**：grounding 句级 bigram 覆盖率校验、正则 query 分解、入库 prompt-injection 清洗均不消耗模型调用；grounding 之上可叠加 faithfulness 硬门禁（`RAG_FAITHFULNESS_GATE=warn|enforce`，低溯源回答警示/拦截）与请求级 LLM 成本硬门禁（`COST_GATE_*`，单次请求调用数/token 超限 fail-closed）。
 
 ### 评测复现性
 
@@ -122,12 +122,13 @@ flowchart TD
 | `scripts/rag-eval/corpus-manifest.json` | 评测语料清单（标题 + 类别 + 派生 ID）。清单之外的文档都算语料外 |
 | `npm run eval:corpus-check` | 校验「清单 ↔ 知识库 ↔ 数据集」三方对齐；有偏差即退出码 1 |
 | `npm run eval:corpus-migrate` | 把数据集里的历史 docId 迁移到确定性 ID |
+| `npm run eval:corpus-reingest` | 按清单把 `ragdata/` 源文件重建为确定性 ID 文档（默认演练，`--write` 执行） |
 
 docId 由 `backend/src/utils/doc-id.js` 从 **(标题, 类别)** 确定性派生（`doc_<sha256(title\0category)[0:32]>`），所以同一份资料重新入库会得到同一个 ID，不再是一次一个随机 UUID。这也意味着同一 (标题, 类别) 的不同内容属于"覆盖"语义——重新入库会替换旧文档。
 
-复现步骤：把 `corpus-manifest.json` 里的文档按清单标题/类别入库 → `npm run eval:corpus-check` 通过 → 再跑评测。
+复现步骤：启动后端与 Qdrant → `npm run eval:corpus-reingest`（先演练核对计划，`--write` 执行删旧档+入库）→ `npm run eval:corpus-check` 通过 → 再跑评测。
 
-> **对齐状态（2026-09-26）**：数据集 ↔ 清单已完全对齐——21 处历史引用全部归一到确定性 ID（`qa.json` 的 15 处老 UUID 8 位前缀截断、`full-coverage-deploy-qa.json` 的 5 处《Agent学习笔记》更早世代 UUID `doc_daff1331-…`，后者已作为别名登记进清单 `legacyId`）。剩余偏差全在知识库侧：现库 20 篇文档全部还是改造前的随机 UUID 世代，需按清单重新入库（同内容的旧 ID 文档删除、重传后即得确定性 ID）；其中 5 篇（医疗/体育/交通指南、数据库/操作系统高频面试题）不在清单内，需先决定是补进清单还是移出知识库。`eval:corpus-check` 会把「清单内暂缺（重入库后自动对齐）」与「清单外真死引用」分开报告。
+> **对齐状态（2026-09-28）**：数据集 ↔ 清单已完全对齐——21 处历史引用全部归一到确定性 ID（`qa.json` 的 15 处老 UUID 8 位前缀截断、`full-coverage-deploy-qa.json` 的 5 处《Agent学习笔记》更早世代 UUID `doc_daff1331-…`，后者已作为别名登记进清单 `legacyId`）；清单已扩至 29 篇（医疗/体育/交通指南、数据库/操作系统高频面试题等此前清单外的 5 篇已补进）。剩余偏差仅在知识库侧：现库 20 篇文档仍是改造前的随机 UUID 世代，运行 `npm run eval:corpus-reingest -- --write` 即可按清单重建（脚本先删旧 UUID 文档再上传，规避内容去重把新上传映射回旧 ID）。
 
 ## 页面路由
 
@@ -146,7 +147,9 @@ docId 由 `backend/src/utils/doc-id.js` 从 **(标题, 类别)** 确定性派生
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` | `/api/health` | 服务健康检查 |
+| `GET` | `/api/live` | 进程存活检查，不依赖外部服务 |
+| `GET` | `/api/ready` | 依赖就绪检查，供 Docker/部署探针使用 |
+| `GET` | `/api/health` | 详细依赖健康快照，包含 SQLite、Qdrant、Embedding、Reranker、LLM 和上传目录状态 |
 | `POST` | `/api/stream` | 主 SSE 会话接口 |
 | `POST` | `/api/chat/upload` | 登录用户上传私有聊天附件，返回带用户/会话归属的 `attachmentId` |
 | `GET` | `/api/chat/attachments/:attachmentId` | 当前用户受控读取私有附件 |
@@ -228,7 +231,10 @@ npm run dev
 
 - 前端：`http://localhost:5173`
 - 后端：`http://localhost:3000`
-- 健康检查：`http://localhost:3000/api/health`
+- 健康检查：`http://localhost:3000/api/live`、`http://localhost:3000/api/ready`、`http://localhost:3000/api/health`
+- 后台任务：质量审计、Wiki 互链、上传清理和隐私留存使用 SQLite 持久化 Job，管理员可通过 `/api/metrics/jobs` 查看失败任务并重试。
+- 数据库迁移：服务启动时执行 `backend/src/db/migrations/` 中的版本化迁移；迁移失败会阻止服务启动，避免半升级状态接收流量。
+- 手动执行数据库迁移：`npm run db:migrate`。
 
 ## 常用命令
 
@@ -427,6 +433,8 @@ cp deploy/.env.production.example deploy/.env.production
 docker compose -p wuli-elf config --quiet
 docker compose -p wuli-elf up -d qdrant backend
 docker compose -p wuli-elf ps
+curl http://127.0.0.1:3000/api/live
+curl http://127.0.0.1:3000/api/ready
 curl http://127.0.0.1:3000/api/health
 ```
 

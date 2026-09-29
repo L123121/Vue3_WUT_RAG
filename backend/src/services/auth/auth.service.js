@@ -5,6 +5,7 @@ const { promisify } = require('util');
 const path = require('path');
 const fs = require('fs');
 const config = require('../../config');
+const { getDatabasePath } = require('../../db/migration-runner');
 
 const scrypt = promisify(crypto.scrypt);
 const USERNAME_RE = /^[a-zA-Z0-9_.@-]{3,32}$/;
@@ -19,9 +20,8 @@ const BLOCKED_USERNAMES = [
 ];
 
 // ========== SQLite 持久化 ==========
-const DATA_DIR = path.join(__dirname, '../../data');
-const DB_FILE = path.join(DATA_DIR, 'store.db');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+const DB_FILE = getDatabasePath();
+if (!fs.existsSync(path.dirname(DB_FILE))) fs.mkdirSync(path.dirname(DB_FILE), { recursive: true });
 
 const Database = require('better-sqlite3');
 const db = new Database(DB_FILE);

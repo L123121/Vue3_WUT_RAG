@@ -3,6 +3,7 @@
 const { redis: store } = require("./memory-store.service");
 const { parseRedisList } = require("./helpers");
 const { logEvent } = require('../observability/observability.service');
+const costBudget = require('../llm/cost-budget.service');
 
 const MAX_SHORT_TERM = 8;
 const COMPRESS_THRESHOLD = 6;
@@ -55,7 +56,8 @@ class ShortTermMemory {
     const texts = items.map((i, idx) => `[${idx + 1}] ${i.content}`).join("\n");
     const prompt = `将以下 ${items.length} 条对话记忆压缩为一句连贯的话，保留关键信息（人物、事件、时间、地点、结论、偏好）。不要添加原文没有的信息。\n\n${texts}\n\n压缩摘要：`;
     try {
-      const result = await this.aiService.getCompletion(prompt, [], { timeout: 5000, retries: 1 });
+      // 后台增强任务豁免主流程成本预算（失败回退原文拼接）
+      const result = await costBudget.runWithoutBudget(() => this.aiService.getCompletion(prompt, [], { timeout: 5000, retries: 1 }));
       const compressed = (result.content || "").trim().replace(/^["「『]|["」』]$/g, "");
       if (compressed && compressed.length > 5) return compressed;
     } catch (err) {

@@ -69,6 +69,17 @@ const registry = Object.freeze({
       isInputDisabled,
     }),
   },
+  [MESSAGE_FRAGMENT_TYPES.FAITHFULNESS_GATE]: {
+    component: MessageStatusFragment,
+    props: ({ message, isModel, isError, isStreaming, isInputDisabled }) => ({
+      variant: MESSAGE_FRAGMENT_TYPES.FAITHFULNESS_GATE,
+      faithfulnessGate: message.faithfulnessGate,
+      isModel,
+      isError,
+      isStreaming,
+      isInputDisabled,
+    }),
+  },
   [MESSAGE_FRAGMENT_TYPES.USAGE]: {
     component: MessageStatusFragment,
     props: ({ message, isModel, isError, isStreaming, isInputDisabled }) => ({

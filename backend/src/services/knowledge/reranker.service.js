@@ -27,6 +27,26 @@ const rerankerScoreCache = new QueryCache(
 
 let modelInstance = null;
 let loadPromise = null;
+let lastLoadError = null;
+let lastLoadedAt = null;
+
+function getRerankerHealth() {
+  if (config?.rag?.rerankEnabled === false) {
+    return { status: 'disabled', enabled: false, loaded: false };
+  }
+  if (modelInstance) {
+    return { status: 'ready', enabled: true, loaded: true, loadedAt: lastLoadedAt, lastError: null };
+  }
+  if (loadPromise) {
+    return { status: 'starting', enabled: true, loaded: false, lastError: lastLoadError };
+  }
+  return {
+    status: lastLoadError ? 'degraded' : 'standby',
+    enabled: true,
+    loaded: false,
+    lastError: lastLoadError,
+  };
+}
 
 class RerankerService {
   /**
@@ -39,8 +59,11 @@ class RerankerService {
     loadPromise = this._doLoad();
     try {
       modelInstance = await loadPromise;
+      lastLoadError = null;
+      lastLoadedAt = new Date().toISOString();
       return modelInstance;
     } catch (err) {
+      lastLoadError = err.message;
       loadPromise = null; // reset so next call retries
       throw err;
     }
@@ -193,5 +216,5 @@ class RerankerService {
   }
 }
 
-module.exports = { RerankerService };
+module.exports = { RerankerService, getRerankerHealth };
 

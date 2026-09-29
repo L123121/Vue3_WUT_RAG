@@ -1,10 +1,20 @@
 "use strict";
 
 const { Router } = require('express');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { requireAuth, requireAdmin } = require('../middleware/auth.middleware');
 const ragController = require('../controllers/rag.controller');
 
 const router = Router();
+
+const documentUploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 60,
+  message: { success: false, code: 'RATE_LIMIT', error: '文档上传过于频繁，请稍后再试' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.userId || ipKeyGenerator(req.ip),
+});
 
 // RAG 接口需要登录
 router.use(requireAuth);
@@ -26,7 +36,7 @@ router.get('/documents/:id', ragController.getDocument);
 
 // 文档管理接口（仅管理员可增删改）
 router.post('/documents', requireAdmin, ragController.addDocument);
-router.post('/documents/upload', requireAdmin, ragController.uploadMiddleware, ragController.uploadDocument);
+router.post('/documents/upload', requireAdmin, documentUploadLimiter, ragController.uploadMiddleware, ragController.uploadDocument);
 router.post('/documents/reindex', requireAdmin, ragController.reindexDocuments);
 router.delete('/documents/:id', requireAdmin, ragController.deleteDocument);
 

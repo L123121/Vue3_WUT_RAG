@@ -89,7 +89,7 @@ describe('chat.controller streamHandler', () => {
     };
     const { createChatHandlers } = require('../src/controllers/chat.controller');
 
-    await createChatHandlers(orchestrator).streamHandler({
+    await createChatHandlers(orchestrator, { enqueueJob: vi.fn() }).streamHandler({
       body: {
         message: '测试 RunEvent',
         history: [],
@@ -135,7 +135,7 @@ describe('chat.controller streamHandler', () => {
       },
     };
 
-    await require('../src/controllers/chat.controller').createChatHandlers(orchestrator).streamHandler({
+    await require('../src/controllers/chat.controller').createChatHandlers(orchestrator, { enqueueJob: vi.fn() }).streamHandler({
       body: {
         message: '测试提前 EOF',
         history: [],

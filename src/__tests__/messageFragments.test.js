@@ -82,6 +82,15 @@ describe('message fragments', () => {
     expect(message.sources).toEqual([{ docId: 'doc-1' }]);
   });
 
+  it('faithfulnessGate 事件整体替换字段并派生为 faithfulness-gate fragment', () => {
+    const gate = { action: 'block', mode: 'enforce', coverage: 0.2, minCoverage: 0.35, blocked: true, refusalText: '拒答' };
+    let message = patchMessageForEvent({ id: 'm-gate', role: 'model', content: '回答' }, 'faithfulnessGate', gate);
+    expect(message.faithfulnessGate).toEqual(gate);
+
+    const hydrated = hydrateMessageFragments(message);
+    expect(hydrated.fragments.map((fragment) => fragment.type)).toContain(MESSAGE_FRAGMENT_TYPES.FAITHFULNESS_GATE);
+  });
+
   it('保留未知 fragment 的原始类型、数据和来源', () => {
     const message = hydrateMessageFragments({
       id: 'm-unknown',
@@ -139,6 +148,7 @@ describe('message fragments', () => {
       decision: { provider: 'jev', status: 'applied' },
       toolCalls: [{ name: 'calculate' }],
       grounding: { coverage: 1 },
+      faithfulnessGate: { action: 'block', refusalText: '拒答' },
       fragments: [{ type: 'unknown', data: { value: 1 } }],
     });
 
@@ -148,6 +158,7 @@ describe('message fragments', () => {
     expect(reset.decision).toBeNull();
     expect(reset.toolCalls).toEqual([]);
     expect(reset.grounding).toBeNull();
+    expect(reset.faithfulnessGate).toBeNull();
     expect(reset.fragments).toEqual([]);
   });
 

@@ -554,8 +554,9 @@ function cleanupFile(filePath) {
 
 const UPLOADS_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 天
 const UPLOADS_CLEAN_INTERVAL_MS = 24 * 60 * 60 * 1000; // 每天一次
+let uploadsCleanupTimer = null;
 
-function cleanOldUploads() {
+async function cleanOldUploads() {
   try {
     if (!fs.existsSync(uploadDir)) return;
     const now = Date.now();
@@ -573,24 +574,39 @@ function cleanOldUploads() {
       }
     }
     if (removed > 0) logEvent('info', 'file_upload_cleanup_done', { removed });
-    void require('./attachment.service').attachmentService.cleanupExpired()
-      .then((metadataRemoved) => {
-        if (metadataRemoved > 0) logEvent('info', 'attachment_metadata_cleanup_done', { removed: metadataRemoved });
-      })
-      .catch((error) => logEvent('warn', 'attachment_metadata_cleanup_failed', { error: error.message }));
+    const metadataRemoved = await require('./attachment.service').attachmentService.cleanupExpired();
+    if (metadataRemoved > 0) logEvent('info', 'attachment_metadata_cleanup_done', { removed: metadataRemoved });
   } catch (error) {
     logEvent('warn', 'file_upload_cleanup_failed', { error: error.message });
+    throw error;
   }
 }
 
 /**
- * 启动上传目录定期清理（启动时立即执行一次，之后每天执行）
+ * 启动上传目录定期清理：按日创建幂等 Job；任务系统不可用时直接清理兜底。
  */
 function startUploadsCleanup() {
-  cleanOldUploads();
-  const timer = setInterval(cleanOldUploads, UPLOADS_CLEAN_INTERVAL_MS);
-  timer.unref();
-  return timer;
+  if (uploadsCleanupTimer) return uploadsCleanupTimer;
+  const enqueueCleanup = () => {
+    try {
+      const { enqueueJob } = require('../jobs/job.service');
+      const dayKey = new Date().toISOString().slice(0, 10);
+      enqueueJob('uploads.cleanup', {}, { idempotencyKey: `uploads-cleanup:${dayKey}` });
+    } catch (error) {
+      logEvent('warn', 'file_upload_cleanup_job_enqueue_failed_fallback_direct', { error: error.message });
+      void cleanOldUploads().catch((cleanupError) => logEvent('warn', 'file_upload_direct_cleanup_fallback_failed', { error: cleanupError.message }));
+    }
+  };
+  enqueueCleanup();
+  uploadsCleanupTimer = setInterval(enqueueCleanup, UPLOADS_CLEAN_INTERVAL_MS);
+  uploadsCleanupTimer.unref();
+  return uploadsCleanupTimer;
+}
+
+function stopUploadsCleanup() {
+  if (!uploadsCleanupTimer) return;
+  clearInterval(uploadsCleanupTimer);
+  uploadsCleanupTimer = null;
 }
 
 module.exports = {
@@ -603,4 +619,6 @@ module.exports = {
   isTableLikePage,
   replaceTablePages,
   startUploadsCleanup,
+  stopUploadsCleanup,
+  cleanOldUploads,
 };

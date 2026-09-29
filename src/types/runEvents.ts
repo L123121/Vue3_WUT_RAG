@@ -87,6 +87,7 @@ export interface RunEventHandlerMap {
   onToolResult?: (toolResult: unknown, event: RunEvent) => void;
   onProcess?: (processCard: Record<string, unknown> | null, event: RunEvent) => void;
   onGrounding?: (grounding: Record<string, unknown> | null, event: RunEvent) => void;
+  onFaithfulnessGate?: (gate: Record<string, unknown> | null, event: RunEvent) => void;
   onUsage?: (usage: UsageInfo | null, event: RunEvent) => void;
   onFollowups?: (items: unknown[], event: RunEvent) => void;
   onDone?: (event: RunEvent) => void;

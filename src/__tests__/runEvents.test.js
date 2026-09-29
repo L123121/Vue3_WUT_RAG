@@ -44,6 +44,14 @@ describe('RunEvent v1 mapper', () => {
     expect(onDecision).toHaveBeenNthCalledWith(2, { fallback: true }, expect.any(Object));
   });
 
+  it('faithfulness.gate 事件进入 onFaithfulnessGate 回调', () => {
+    const onFaithfulnessGate = vi.fn();
+    const gate = { action: 'block', mode: 'enforce', coverage: 0.2, refusalText: '拒答' };
+    dispatchRunEvent(event(RUN_EVENT_TYPES.FAITHFULNESS_GATE, { gate }), { onFaithfulnessGate });
+
+    expect(onFaithfulnessGate).toHaveBeenCalledWith(gate, expect.any(Object));
+  });
+
   it('未知事件保留原始类型、数据和序号来源，失败事件携带 code', () => {
     const onUnknown = vi.fn();
     const onError = vi.fn();

@@ -6,6 +6,7 @@ const props = defineProps({
   decision: { type: Object, default: null },
   intent: { type: Object, default: null },
   grounding: { type: Object, default: null },
+  faithfulnessGate: { type: Object, default: null },
   usage: { type: Object, default: null },
   followups: { type: Array, default: () => [] },
   isModel: Boolean,
@@ -62,6 +63,23 @@ const groundingBadgeClass = computed(() => {
   return 'bg-red-50/80 dark:bg-red-900/20 border-red-100 dark:border-red-800/40 text-red-600 dark:text-red-300';
 });
 
+// faithfulness 硬门禁：warn=琥珀警示条（低溯源但未拦截）；block=红色拦截条（正文已被拒答文案替换）
+const gateLabel = computed(() => {
+  const gate = props.faithfulnessGate;
+  if (!gate) return '';
+  const pct = Math.round(Number(gate.coverage || 0) * 100);
+  const min = Math.round(Number(gate.minCoverage || 0) * 100);
+  return gate.action === 'block'
+    ? `已拦截：溯源覆盖 ${pct}%（低于门禁 ${min}%），以下为拒答说明`
+    : `低溯源警示：溯源覆盖 ${pct}%，低于门禁 ${min}%，请谨慎核对`;
+});
+
+const gateBannerClass = computed(() => (
+  props.faithfulnessGate?.action === 'block'
+    ? 'bg-red-50/90 dark:bg-red-900/20 border-red-200 dark:border-red-800/50 text-red-600 dark:text-red-300'
+    : 'bg-amber-50/90 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/50 text-amber-600 dark:text-amber-300'
+));
+
 const usageLabel = computed(() => {
   const usage = props.usage;
   if (!usage) return '';
@@ -101,6 +119,14 @@ const usageLabel = computed(() => {
     :class="groundingBadgeClass"
   >
     <span class="text-[10px] font-medium">{{ groundingLabel }}</span>
+  </div>
+
+  <div
+    v-else-if="variant === 'faithfulness-gate' && isModel && !isError && !isStreaming && gateLabel"
+    class="mt-2 flex items-start gap-1.5 rounded-lg border px-2.5 py-1.5"
+    :class="gateBannerClass"
+  >
+    <span class="text-[11px] leading-relaxed">{{ gateLabel }}</span>
   </div>
 
   <div

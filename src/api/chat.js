@@ -292,6 +292,7 @@ export const sendMessageStream = async (message, history = [], callbacks, option
             if (json.rag || json.trace || json.retrieval || json.agent || json.agenticRag) measuredCallbacks.onTrace?.(json);
             if (json.processCard) measuredCallbacks.onProcess?.(json.processCard);
             if (json.grounding) measuredCallbacks.onGrounding?.(json.grounding);
+            if (json.faithfulnessGate) measuredCallbacks.onFaithfulnessGate?.(json.faithfulnessGate);
             if (json.usage) measuredCallbacks.onUsage?.(json.usage);
             if (json.followups) measuredCallbacks.onFollowups?.(json.followups);
             if (json.error) {

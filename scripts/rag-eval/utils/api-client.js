@@ -198,8 +198,8 @@ export async function addDocument(document) {
  * 获取知识库文档列表
  * @returns {Promise<Array>}
  */
-export async function listDocuments() {
-  const response = await fetchWithAuth(`${BACKEND_URL}/api/rag/documents`);
+export async function listDocuments({ limit = 500 } = {}) {
+  const response = await fetchWithAuth(`${BACKEND_URL}/api/rag/documents?page=1&limit=${limit}`);
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`获取文档列表失败: ${response.status} ${errorText.substring(0, 200)}`);

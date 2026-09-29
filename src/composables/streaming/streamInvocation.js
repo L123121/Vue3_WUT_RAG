@@ -137,6 +137,7 @@ export function createStreamInvocation({
       onTrace: patchHandlers.onTrace,
       onProcess: patchHandlers.onProcess,
       onGrounding: patchHandlers.onGrounding,
+      onFaithfulnessGate: patchHandlers.onFaithfulnessGate,
       onUsage: patchHandlers.onUsage,
       onFollowups: patchHandlers.onFollowups,
       onRetry: (nextAttempt) => {
@@ -162,6 +163,13 @@ export function createStreamInvocation({
             return { ...m, text: newText, content: newText };
           });
         }
+        // faithfulness 硬门禁（enforce）：gate 事件先于 [DONE] 到达而 RAF 此刻才最终刷屏，
+        // 替换必须在最终 flush 之后执行——gate 事件到达时只挂载不替换（messagePatches）
+        updateMessage(convStore, conversationId, aiMsgId, (m) => {
+          const gate = m.faithfulnessGate;
+          if (!gate || gate.action !== 'block' || !gate.refusalText) return m;
+          return { ...m, text: gate.refusalText, content: gate.refusalText };
+        });
         autoRenameConversationIfNeeded(conv, convStore, trimmedText);
         convStore.scheduleSaveCache(true);
         onStreamEvent?.('done');
@@ -210,6 +218,7 @@ export function createStreamInvocation({
         onToolResult: (toolResult) => callbacks.onToolResult(toolResult),
         onProcess: (processCard) => callbacks.onProcess(processCard),
         onGrounding: (grounding) => callbacks.onGrounding(grounding),
+        onFaithfulnessGate: (gate) => callbacks.onFaithfulnessGate(gate),
         onUsage: (usage) => callbacks.onUsage(usage),
         onFollowups: (followups) => callbacks.onFollowups(followups),
         onDone: () => callbacks.onDone(),

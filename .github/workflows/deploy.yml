@@ -106,6 +106,12 @@ jobs:
       - name: Dataset & manifest integrity
         run: npm run eval:dataset-check
 
+      - name: Validate quality gate script
+        run: |
+          mkdir -p /tmp/wut-quality-gate
+          printf '{"aggregate":{"recall@5":0.95,"faithfulness":0.90}}' > /tmp/wut-quality-gate/report.json
+          RAG_GATE_MIN_RECALL5=0.80 RAG_GATE_MIN_FAITHFULNESS=0.80 npm run eval:quality-gate -- /tmp/wut-quality-gate/report.json
+
       - name: Audit production dependencies
         run: |
           npm audit --omit=dev --audit-level=high
@@ -123,6 +129,22 @@ jobs:
         run: npm run eval:rag-baseline
         env:
           EVAL_API_BASE: ${{ secrets.RAG_EVAL_API_BASE }}
+          EVAL_MIN_RECALL5: ${{ vars.RAG_GATE_MIN_RECALL5 || '0.80' }}
+
+      - name: Enforce RAG quality gate
+        if: ${{ vars.RAG_EVAL_ENABLED == 'true' }}
+        run: |
+          RESULT=$(find backend/scripts/rag-eval/results -type f -name 'eval-baseline-*.json' -print | sort | tail -1)
+          if [ -z "$RESULT" ]; then
+            echo "::error::未找到 RAG baseline 结果文件"
+            exit 1
+          fi
+          RAG_GATE_MIN_RECALL5="${RAG_GATE_MIN_RECALL5}" \
+          RAG_GATE_MAX_REGRESSION="${RAG_GATE_MAX_REGRESSION}" \
+            npm run eval:quality-gate -- "$RESULT"
+        env:
+          RAG_GATE_MIN_RECALL5: ${{ vars.RAG_GATE_MIN_RECALL5 || '0.80' }}
+          RAG_GATE_MAX_REGRESSION: ${{ vars.RAG_GATE_MAX_REGRESSION || '' }}
 
       # 评测结果留存为 artifact：跨次部署可对比 Recall/p95 趋势，
       # 这是"指标可复现"闭环的最后一环（结果此前只落在 runner 本地即丢弃）
@@ -246,7 +268,7 @@ jobs:
             echo "等待后端启动..."
             HEALTHY=false
             for i in $(seq 1 12); do
-              if curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+              if curl -sf http://localhost:3000/api/ready > /dev/null 2>&1; then
                 echo "✅ 后端启动成功"
                 HEALTHY=true
                 break

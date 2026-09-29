@@ -4,6 +4,7 @@ const config = require('../../config');
 const { metrics } = require('../observability/metrics.service');
 const { logEvent } = require('../observability/observability.service');
 const { buildFollowups } = require('./rag-followups.service');
+const faithfulnessGate = require('./faithfulness-gate.service');
 
 /**
  * RAG 生成层：prompt 组装、非流式/流式 LLM 生成、失败降级与收尾旁路
@@ -74,7 +75,18 @@ async function generateAnswer(svc, { message, history, pipeline, tracer, options
     });
   }
 
-  return { reply, aiLatency, llmUsage, llmModel, processCard, grounding };
+  // faithfulness 硬门禁：enforce 模式下低溯源回答替换为拒答文案（未过校验不返给调用方）
+  const gate = faithfulnessGate.evaluateAndLog(grounding, { traceId: tracer?.traceId });
+  if (gate) {
+    svc._recordTraceStage(tracer, 'faithfulness_gate', groundingStart, true, {
+      action: gate.action,
+      coverage: gate.coverage,
+      minCoverage: gate.minCoverage,
+    });
+    if (gate.action === 'block') reply = gate.refusalText;
+  }
+
+  return { reply, aiLatency, llmUsage, llmModel, processCard, grounding, faithfulnessGate: gate || null };
 }
 
 /**
@@ -122,6 +134,18 @@ async function* streamAnswer(svc, { message, history, options, pipeline, tracer,
             unsupportedCount: grounding.unsupportedCount,
           });
           yield { type: 'grounding', grounding };
+        }
+
+        // faithfulness 硬门禁：低溯源回答按模式 warn/enforce 下发 gate 事件
+        //（enforce 时前端把气泡文案替换为拒答说明；drain 路径直接替换 reply）
+        const gate = faithfulnessGate.evaluateAndLog(grounding, { traceId: tracer?.traceId });
+        if (gate) {
+          svc._recordTraceStage(tracer, 'faithfulness_gate', groundingStart, true, {
+            action: gate.action,
+            coverage: gate.coverage,
+            minCoverage: gate.minCoverage,
+          });
+          yield { type: 'faithfulness_gate', gate, traceId: tracer?.traceId };
         }
 
         metrics.recordLatency('total', Date.now() - totalStart);

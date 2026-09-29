@@ -15,9 +15,9 @@ const {
   writeStreamEvent,
 } = require('../utils/sse-events');
 const { upload, parseFile, cleanupFile } = require('../services/knowledge/file-upload.service');
-const { recordAudit } = require('../services/agent/quality-governance.service');
 const { vectorStore: vectorStoreSingleton } = require('../services/knowledge/vector-store-qdrant.service');
 const { logEvent } = require('../services/observability/observability.service');
+const jobService = require('../services/jobs/job.service');
 
 const ragService = new RagService(aiService);
 const memoryService = new MemoryService();
@@ -135,14 +135,18 @@ const ragChat = async (req, res, next) => {
       signal: abortController.signal,
     }));
     res.setHeader('X-Trace-Id', result.traceId || req.traceId);
-    void recordAudit({
-      question: message,
-      answer: result.reply,
-      sources: result.sources,
-      traceId: result.traceId || req.traceId,
-      userId: req.userId,
-      route: 'rag-direct',
-    }).catch((error) => logEvent('warn', 'quality_audit_record_failed', { scope: 'rag_non_stream', error: error.message }));
+    try {
+      jobService.enqueueJob('quality.audit', {
+        question: message,
+        answer: result.reply,
+        sources: result.sources,
+        traceId: result.traceId || req.traceId,
+        userId: req.userId,
+        route: 'rag-direct',
+      }, { idempotencyKey: `audit:${result.traceId || req.traceId}:${message}` });
+    } catch (error) {
+      logEvent('warn', 'quality_audit_job_enqueue_failed', { scope: 'rag_non_stream', error: error.message });
+    }
     successResponse(res, result, 'RAG 处理完成');
     saveChatMemory(req.userId, message, result.reply);
   } catch (error) {
@@ -214,14 +218,18 @@ const ragChatStream = async (req, res, next) => {
     cleanupClientClose();
     res.end();
 
-    void recordAudit({
-      question: message,
-      answer: fullReply,
-      sources: audit.sources,
-      traceId: audit.traceId,
-      userId: req.userId,
-      route: 'rag-direct-stream',
-    }).catch((error) => logEvent('warn', 'quality_audit_record_failed', { scope: 'rag_stream', error: error.message }));
+    try {
+      jobService.enqueueJob('quality.audit', {
+        question: message,
+        answer: fullReply,
+        sources: audit.sources,
+        traceId: audit.traceId,
+        userId: req.userId,
+        route: 'rag-direct-stream',
+      }, { idempotencyKey: `audit:${audit.traceId}:${streamContext.runId}` });
+    } catch (error) {
+      logEvent('warn', 'quality_audit_job_enqueue_failed', { scope: 'rag_stream', error: error.message });
+    }
 
     saveChatMemory(req.userId, message, fullReply);
   } catch (error) {
@@ -629,6 +637,3 @@ module.exports = {
   uploadMiddleware,
   reindexDocuments,
 };
-
-
-

@@ -52,6 +52,7 @@ function createDocumentService(docs = DOCS) {
 let store;
 let documentService;
 let wiki;
+let enqueueJob;
 
 // 默认注入的 aiService 永远返回 isMock:true（等价于"无 API Key"的生产降级路径），
 // 保证既有测试不会因为 setVisibility 内部 fire-and-forget 的互链梳理而意外触达真实
@@ -59,17 +60,23 @@ let wiki;
 // 显式传入自己的 fake aiService 覆盖它。
 const noopAiService = { getCompletion: vi.fn(async () => ({ isMock: true })) };
 
-function useWiki({ aiService: aiServiceOverride, docs } = {}) {
+function useWiki({ aiService: aiServiceOverride, docs, enqueueJob: enqueueJobOverride } = {}) {
   delete require.cache[require.resolve('../src/services/wiki/wiki.service')];
   const { WikiService } = require('../src/services/wiki/wiki.service');
   const scopedDocumentService = docs ? createDocumentService(docs) : documentService;
-  return new WikiService({ store, documentService: scopedDocumentService, aiService: aiServiceOverride || noopAiService });
+  return new WikiService({
+    store,
+    documentService: scopedDocumentService,
+    aiService: aiServiceOverride || noopAiService,
+    enqueueJob: enqueueJobOverride || enqueueJob,
+  });
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
   store = createHashStore();
   documentService = createDocumentService();
+  enqueueJob = vi.fn();
   wiki = useWiki();
 });
 
@@ -301,7 +308,7 @@ describe('WikiService 编译期互链', () => {
     await expect(noAiWiki.compileRelatedPages('doc_rel1')).resolves.toEqual([]);
   });
 
-  it('setVisibility 上架且内容变化时异步触发互链梳理；重复上架但内容未变则跳过', async () => {
+  it('setVisibility 上架且内容变化时入队互链梳理；重复上架但内容未变则跳过', async () => {
     const fakeAi = {
       getCompletion: vi.fn(async () => ({
         content: JSON.stringify([{ docId: 'doc_rel2', reason: '关联' }]),
@@ -310,14 +317,16 @@ describe('WikiService 编译期互链', () => {
     const localWiki = useWiki({ docs: RELATION_DOCS, aiService: fakeAi });
     await localWiki.setVisibility({ docId: 'doc_rel2', visible: true });
     await localWiki.setVisibility({ docId: 'doc_rel1', visible: true });
-    // setVisibility 内部是 fire-and-forget，显式等待一次微任务让它落地
-    await new Promise((resolve) => setImmediate(resolve));
-    expect((await localWiki.getMeta('doc_rel1')).relatedPages).toEqual([{ docId: 'doc_rel2', reason: '关联' }]);
+    expect(enqueueJob).toHaveBeenCalledWith('wiki.relations.compile', expect.objectContaining({ docId: 'doc_rel1' }), expect.objectContaining({ idempotencyKey: expect.stringContaining('wiki-relations:doc_rel1:') }));
+    expect(fakeAi.getCompletion).not.toHaveBeenCalled();
+    const firstIdempotencyKey = enqueueJob.mock.calls.find((call) => call[1]?.docId === 'doc_rel1')[2].idempotencyKey;
 
     fakeAi.getCompletion.mockClear();
+    enqueueJob.mockClear();
     await localWiki.setVisibility({ docId: 'doc_rel1', visible: false });
     await localWiki.setVisibility({ docId: 'doc_rel1', visible: true });
-    await new Promise((resolve) => setImmediate(resolve));
+    expect(enqueueJob).toHaveBeenCalledOnce();
+    expect(enqueueJob.mock.calls[0][2].idempotencyKey).toBe(firstIdempotencyKey);
     expect(fakeAi.getCompletion).not.toHaveBeenCalled();
   });
 

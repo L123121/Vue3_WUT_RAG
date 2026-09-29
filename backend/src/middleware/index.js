@@ -46,6 +46,13 @@ function applyMiddleware(app) {
     });
   });
 
+  // 请求级 LLM 成本硬门禁：AsyncLocalStorage 建立请求作用域预算（置于 traceId
+  // 生成之后以带上 traceId），ai.service 入口统一断言/记账（见 llm/cost-budget.service.js）
+  const costBudget = require('../services/llm/cost-budget.service');
+  app.use((req, res, next) => {
+    costBudget.runWithBudget(() => next(), { traceId: req.traceId });
+  });
+
   // CORS — 允许前端跨域 + cookie
   // 生产环境必须显式配置 CORS_ORIGIN 白名单，缺失时 fail-fast 而非回退到 origin:true，
   // 否则任意第三方站点可携带 httpOnly cookie 发起跨域请求（CSRF 式凭证泄露）

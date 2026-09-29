@@ -6,6 +6,7 @@ const { metrics } = require('../observability/metrics.service');
 const { operationalMetrics } = require('../observability/operational-metrics.service');
 const { withActiveSpan, startLlmSpan, setLlmUsage, endLlmSpan } = require('../observability/otel-tracing.service');
 const { logEvent } = require('../observability/observability.service');
+const costBudget = require('./cost-budget.service');
 const {
   RequestQueue,
   llmQueue,
@@ -127,10 +128,14 @@ class AiService {
   // ========== 非流式（经队列） ==========
 
   async getCompletion(message, history = [], opts = {}) {
+    // 成本硬门禁：预算耗尽时后续 LLM 调用 fail-closed（上游各链路均有降级路径）
+    costBudget.assertWithinBudget('getCompletion');
     if (!this._hasKey()) {
       logEvent('warn', 'ai_api_key_missing_mock_mode', { message: 'API Key 缺失，使用模拟模式' });
       return { content: this.getMockResponse(message), isMock: true, model: 'mock', usage: null };
     }
+
+    costBudget.beginLlmCall('getCompletion');
 
     // 滚动摘要：先压缩 history，再进队列
     const compacted = await this._compactHistory(history);
@@ -138,7 +143,9 @@ class AiService {
     const release = await llmQueue.acquire(opts.signal);
     logEvent('info', 'ai_queue_slot_acquired', { pending: llmQueue.pending, running: llmQueue.running });
     try {
-      return await this._doGetCompletion(message, compacted, opts);
+      const result = await this._doGetCompletion(message, compacted, opts);
+      costBudget.addUsage(result.usage);
+      return result;
     } finally {
       release();
     }
@@ -227,12 +234,16 @@ class AiService {
   // ========== 流式（经队列） ==========
 
   async *getCompletionStream(message, history = [], opts = {}) {
+    // 成本硬门禁：预算耗尽时后续 LLM 调用 fail-closed
+    costBudget.assertWithinBudget('getCompletionStream');
     if (!this._hasKey()) {
       const mock = this.getMockResponse(message);
       for (const c of mock) yield { content: c, done: false };
       yield { content: '', done: true };
       return;
     }
+
+    costBudget.beginLlmCall('getCompletionStream');
 
     // 滚动摘要：先压缩 history，再排队（async generator 内 await 后仍保留 yield 语义）
     const compacted = await this._compactHistory(history);
@@ -248,7 +259,10 @@ class AiService {
     logEvent('info', 'ai_stream_queue_slot_acquired', { pending: llmQueue.pending, running: llmQueue.running });
 
     try {
-      yield* this._doGetCompletionStream(message, compacted, opts);
+      for await (const chunk of this._doGetCompletionStream(message, compacted, opts)) {
+        if (chunk.done) costBudget.addUsage(chunk.usage);
+        yield chunk;
+      }
     } finally {
       release();
     }

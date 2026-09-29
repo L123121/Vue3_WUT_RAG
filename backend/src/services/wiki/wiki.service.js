@@ -1,6 +1,7 @@
 "use strict";
 
 const crypto = require('crypto');
+const costBudget = require('../llm/cost-budget.service');
 
 /**
  * 校园百科（Wiki）阅读与治理层
@@ -142,11 +143,12 @@ function scoreCandidate(target, candidate) {
 }
 
 class WikiService {
-  constructor({ store: storeOverride, documentService, aiService: aiServiceOverride } = {}) {
+  constructor({ store: storeOverride, documentService, aiService: aiServiceOverride, enqueueJob } = {}) {
     this.store = storeOverride || store;
     this.documentService = documentService || new DocumentService();
     // 显式注入（测试/未来 DI）优先；生产路径首次真正调用互链梳理时才惰性 require
     this._aiServiceOverride = aiServiceOverride || null;
+    this._enqueueJob = enqueueJob || ((...args) => require('../jobs/job.service').enqueueJob(...args));
     // 互链编译去重：setVisibility 的异步触发与显式重算并发时复用同一 in-flight Promise
     this._relationCompiles = new Map();
   }
@@ -266,9 +268,13 @@ class WikiService {
     // 编译期互链：上架且内容有变化才重新梳理，异步执行不阻塞上下架响应；
     // 失败只告警，读取侧自然回退到已有（可能是空）relatedPages
     if (visible && meta.relationsRevision !== revision) {
-      void this.compileRelatedPages(docId).catch((err) => {
-        logEvent('warn', 'wiki_relation_compile_failed', { docId, error: err.message });
-      });
+      try {
+        this._enqueueJob('wiki.relations.compile', { docId, revision }, {
+          idempotencyKey: `wiki-relations:${docId}:${revision}`,
+        });
+      } catch (err) {
+        logEvent('warn', 'wiki_relation_job_enqueue_failed', { docId, error: err.message });
+      }
     }
 
     return { docId, ...meta };
@@ -366,10 +372,11 @@ ${candidateList}
 没有相关候选时输出 []`;
 
     try {
-      const result = await this.aiService.getCompletion(prompt, [], {
+      // 编译期后台任务豁免主流程成本预算（失败仅告警，读取侧回退空互链）
+      const result = await costBudget.runWithoutBudget(() => this.aiService.getCompletion(prompt, [], {
         timeout: relationConfig.relationCompileTimeoutMs || 8000,
         retries: 0,
-      });
+      }));
       if (result?.isMock) return [];
       const items = parseJsonArray(result.content);
       if (!Array.isArray(items)) return [];

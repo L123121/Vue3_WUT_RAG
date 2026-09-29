@@ -3,6 +3,7 @@
 const { redis: store } = require('./memory-store.service');
 const { ShortTermMemory } = require('./short-term-memory');
 const { aiService } = require('../llm/ai.service');
+const costBudget = require('../llm/cost-budget.service');
 const { LongTermMemory, MEMORY_TYPES } = require('./long-term-memory');
 const { UserProfile } = require('./user-profile');
 const { parseRedisList } = require('./helpers');
@@ -207,7 +208,8 @@ class MemoryService {
 助手：${String(aiReply).substring(0, 800)}`;
 
     try {
-      const result = await aiService.getCompletion(prompt, [], { timeout: 8000, retries: 0 });
+      // 后台增强任务豁免主流程成本预算（失败回退正则提取）
+      const result = await costBudget.runWithoutBudget(() => aiService.getCompletion(prompt, [], { timeout: 8000, retries: 0 }));
       const items = parseJsonArray(result.content);
       if (items === null) {
         logEvent('warn', 'memory_llm_extract_parse_failed_regex_fallback', { message: 'LLM 记忆提取输出解析失败，回退正则提取' });

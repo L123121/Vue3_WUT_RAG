@@ -26,6 +26,7 @@ const TOTAL_DEFAULTS = {
   decisionFallbacks: 0,
   decisionTimeouts: 0,
   decisionShadow: 0,
+  costGateExceeded: 0,
 };
 
 const numberEnv = (name, fallback) => {
@@ -82,6 +83,7 @@ const createOperationalMetrics = (options = {}) => {
   const ttsUsage = [];
   const runUsage = [];
   const decisionUsage = [];
+  const costGateUsage = [];
   const alertState = new Map();
   let restoredState = null;
   if (persistence) {
@@ -252,6 +254,11 @@ const createOperationalMetrics = (options = {}) => {
       checkAlerts();
       schedulePersist();
     },
+    recordCostGateExceeded({ reason = 'unknown', traceId = null } = {}) {
+      totals.costGateExceeded += 1;
+      pushBounded(costGateUsage, { timestamp: now(), reason: String(reason || 'unknown').slice(0, 40), traceId: traceId || null });
+      schedulePersist();
+    },
     recordTtsUsage({ model, characters, traceId, latencyMs = 0 }) {
       const timestamp = now();
       const count = Number(characters) || 0;
@@ -300,6 +307,7 @@ const createOperationalMetrics = (options = {}) => {
           recent: decisionUsage.slice(-100),
         },
         llm: { total: totals.llmCalls, promptTokens: totals.promptTokens, completionTokens: totals.completionTokens, estimatedCostCny: totals.llmCostCny, recent: llmUsage.slice(-100) },
+        costGate: { exceeded: totals.costGateExceeded, recent: costGateUsage.slice(-100) },
         tts: { total: totals.ttsCalls, characters: totals.ttsCharacters, estimatedCostCny: totals.ttsCostCny, recent: ttsUsage.slice(-100) },
         daily: { ...daily },
         estimatedCostCny: totals.llmCostCny + totals.ttsCostCny,

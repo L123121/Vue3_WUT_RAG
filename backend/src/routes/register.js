@@ -2,10 +2,12 @@
  * 路由注册 — 从 app.js 拆分
  */
 const express = require('express');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const path = require('path');
 const config = require('../config');
 const { logEvent } = require('../services/observability/observability.service');
 const { getEmbeddingHealth } = require('../services/knowledge/embedding.service');
+const { getDependencyHealth } = require('../services/observability/dependency-health.service');
 
 function applyRoutes(app, chatLimiter) {
   const { router: apiRoutes } = require('./index');
@@ -18,14 +20,34 @@ function applyRoutes(app, chatLimiter) {
   const { router: metricsRoutes } = require('./metrics.routes');
 
   const isProduction = process.env.NODE_ENV === 'production';
+  const uploadLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    max: 30,
+    message: { success: false, code: 'RATE_LIMIT', error: '文件上传过于频繁，请稍后再试' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => req.userId || ipKeyGenerator(req.ip),
+  });
 
-  // 健康检查
+  // 存活检查只回答进程是否还在，不触碰外部依赖。
+  app.get('/api/live', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // 就绪检查反映核心依赖是否可以承接正常流量。
+  app.get('/api/ready', (req, res) => {
+    const health = getDependencyHealth();
+    res.status(health.ready ? 200 : 503).json(health);
+  });
+
+  // 详细健康快照：保留旧字段，兼容已有部署探针和评测脚本。
   app.get('/api/health', (req, res) => {
+    const health = getDependencyHealth();
     const hasApiConfig = !!config.ai.apiKey;
-    res.json({
-      status: 'ok',
-      message: '武理小精灵后端服务运行正常',
-      timestamp: new Date().toISOString(),
+    res.status(health.status === 'unavailable' ? 503 : 200).json({
+      ...health,
+      status: health.status,
+      message: health.status === 'ready' ? '武理小精灵后端服务运行正常' : '武理小精灵后端服务处于降级状态',
       ai_service: {
         enabled: hasApiConfig,
         provider: 'StepFun (阶跃星辰)',
@@ -33,12 +55,7 @@ function applyRoutes(app, chatLimiter) {
         status: hasApiConfig ? '配置正常' : '模拟模式',
       },
       storage: 'sqlite',
-      // 检索侧质量信号：embedding 的 isAvailable 恒为 true（降级后仍能产出向量），
-      // 只看它会复现 round-22 的"健康检查全绿但检索质量已塌"。
-      // 这里额外读降级计数，模型未加载/推理失败时 status 会变成 degraded。
-      retrieval: {
-        embedding: getEmbeddingHealth(),
-      },
+      retrieval: { embedding: getEmbeddingHealth() },
     });
   });
 
@@ -69,7 +86,7 @@ function applyRoutes(app, chatLimiter) {
   app.post('/api/audio/speech', requireAuth, chatLimiter, speechHandler);
 
   // 聊天文件上传
-  app.post('/api/chat/upload', requireAuth, chatUpload.single('file'), async (req, res) => {
+  app.post('/api/chat/upload', requireAuth, uploadLimiter, chatUpload.single('file'), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ success: false, error: '请上传文件' });
     }

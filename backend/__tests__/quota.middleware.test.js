@@ -54,6 +54,14 @@ describe('quota.middleware', () => {
     expect(next).toHaveBeenCalled();
   });
 
+  it.each(['/api/live', '/api/ready'])('健康探针路径（%s）跳过配额检查', (path) => {
+    const reserveSpy = vi.spyOn(quotaService, 'reserve');
+    const next = vi.fn();
+    quotaMiddleware({ path, userId: null }, {}, next);
+    expect(reserveSpy).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
+  });
+
   it('API 列表页精确跳过，但 /api/chat 等消耗 LLM 的接口不跳过', async () => {
     const reserveSpy = vi.spyOn(quotaService, 'reserve');
     // /api 列表页本身跳过
