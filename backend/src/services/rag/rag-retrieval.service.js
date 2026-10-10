@@ -367,19 +367,23 @@ function fuseRetrievalResults(svc, vectorResults = [], keywordResults = [], limi
 async function dualRetrieve(svc, message, history, options = {}) {
   const tracer = options.tracer || null;
 
-  // 1) Query 改写：解决多轮对话中指代/省略问题
-  let rewrittenQuery = null;
-  if (queryRewrite.shouldRewriteQuery(message, history)) {
+  // 原问题检索与改写同时启动；改写只负责扩大召回池，不阻塞原问题检索。
+  // 立即观察原问题检索的拒绝，避免等待改写期间产生未处理 rejection。
+  const originalJob = Promise.resolve(svc.retrieveCandidates(message, { ...options, queryVariant: 'original' }))
+    .then(result => ({ result }), error => ({ error }));
+  const rewriteJob = queryRewrite.shouldRewriteQuery(message, history) ? (async () => {
     const rewriteStart = Date.now();
     try {
-      rewrittenQuery = await queryRewrite.rewriteQuery(message, history, svc.aiService);
+      const rewrittenQuery = await queryRewrite.rewriteQuery(message, history, svc.aiService);
       svc._recordTraceStage(tracer, 'query_rewrite', rewriteStart, true, {
         changed: !!rewrittenQuery,
       });
+      return rewrittenQuery;
     } catch (err) {
       svc._recordTraceStage(tracer, 'query_rewrite', rewriteStart, false, {}, err);
+      return null;
     }
-  }
+  })() : Promise.resolve(null);
 
   // 2) 跨文档问题分解：对比/列举类问题拆实体级子查询（零 LLM 成本）
   let decompose = { subQueries: [], type: null };
@@ -415,7 +419,15 @@ async function dualRetrieve(svc, message, history, options = {}) {
         .catch(err => svc._recordTraceStage(tracer, 'step_back', stepBackStart, false, {}, err))
     );
   }
-  if (translateJobs.length > 0) await Promise.all(translateJobs);
+  const [originalOutcome, rewrittenQuery] = await Promise.all([
+    originalJob,
+    rewriteJob.then(async (rewritten) => {
+      if (translateJobs.length > 0) await Promise.all(translateJobs);
+      return rewritten;
+    }),
+  ]);
+  if (originalOutcome.error) throw originalOutcome.error;
+  const originalResult = originalOutcome.result;
 
   // 3) 组装检索变体并去重（规范化文本相同视为同一变体）
   const seenVariants = new Set([String(message).trim().toLowerCase()]);
@@ -453,16 +465,13 @@ async function dualRetrieve(svc, message, history, options = {}) {
 
   // 单变体：不需要改写也无子查询，保持原单路路径零额外开销
   if (variants.length === 1) {
-    const { candidates, trace } = await svc.retrieveCandidates(message, { ...options, queryVariant: 'original' });
-    return { candidates, trace, rewrittenQuery: null };
+    return { candidates: originalResult.candidates, trace: originalResult.trace, rewrittenQuery: null };
   }
 
-  // 多变体并行检索（embedding 有缓存，子查询短文本开销小）
-  const results = await Promise.all(
-    variants.map(v => svc.retrieveCandidates(v.query, { ...options, queryVariant: v.queryVariant })),
+  // 原问题已完成，其余变体并行检索，保持合并顺序和 trace 语义不变。
+  const extraResults = await Promise.all(
+    variants.slice(1).map(v => svc.retrieveCandidates(v.query, { ...options, queryVariant: v.queryVariant })),
   );
-  const originalResult = results[0];
-  const extraResults = results.slice(1);
   const rewrittenResult = extraResults.find(r => r.trace?.queryVariant === 'rewritten') ||
     extraResults.find((_, i) => variants[i + 1].queryVariant === 'rewritten') || null;
 

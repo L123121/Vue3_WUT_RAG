@@ -5,6 +5,24 @@ const { logEvent } = require('../observability/observability.service');
 const ragRetrieval = require('./rag-retrieval.service');
 const contextBuilder = require('./rag-context-builder.service');
 
+// 仅在父段检索分数有明确断层时缩小 cross-encoder 输入；
+// 分布平坦或分数异常时保持原来的 20 个上限。
+function selectRerankCount(candidates, maxInput = 20) {
+  const limit = Math.min(candidates.length, maxInput);
+  const minInput = Math.min(limit, 12);
+  if (limit <= minInput) return limit;
+  const topScore = Number(candidates[0]?.bestChunk?.score);
+  if (!Number.isFinite(topScore) || topScore <= 0) return limit;
+
+  for (let i = minInput; i < limit; i++) {
+    const previous = Number(candidates[i - 1]?.bestChunk?.score);
+    const current = Number(candidates[i]?.bestChunk?.score);
+    if (!Number.isFinite(previous) || !Number.isFinite(current)) return limit;
+    if (previous - current >= 0.15 * topScore && current <= 0.65 * topScore) return i;
+  }
+  return limit;
+}
+
 /**
  * RAG 检索管道编排：文档检查 → 多变体检索 → 子句选择 → 父段处理 → 上下文组装。
  * 从 rag.service 拆出；函数第一个参数为 RagService 实例（svc），
@@ -26,7 +44,7 @@ async function buildParentContext(svc, message, topChunks, options, tracer) {
   if (svc.rerankEnabled && parentCandidates.length > 1) {
     const RERANK_MAX_INPUT = 20;
     parentCandidates.sort((a, b) => (b.bestChunk?.score || 0) - (a.bestChunk?.score || 0));
-    const rerankCandidates = parentCandidates.slice(0, RERANK_MAX_INPUT);
+    const rerankCandidates = parentCandidates.slice(0, selectRerankCount(parentCandidates, RERANK_MAX_INPUT));
     const rerankInput = rerankCandidates.map(m => ({
       text: m.parentText || m.bestChunk?.text || '',
       score: m.bestChunk?.score || 0,
@@ -201,4 +219,4 @@ async function runRAGPipeline(svc, message, history = [], options = {}) {
   };
 }
 
-module.exports = { runRAGPipeline };
+module.exports = { runRAGPipeline, selectRerankCount };
