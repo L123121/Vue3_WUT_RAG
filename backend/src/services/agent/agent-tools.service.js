@@ -7,10 +7,11 @@
  *   - search_knowledge_base：知识库 RAG 检索（复用 rag.service）
  *   - read_tool_artifact：读取当前 Agent 运行产生的受控大型工具结果工件
  *   - calculate：数学计算（mathjs 安全求值）
- * 教务系工具（查成绩/课表等）因当前项目无教务系统接入，不移植。
+ * 个人教务工具仅预注册（默认禁用），正式接口与授权接入后再开放。
  */
 
 const { ToolRegistry, TOOL_SOURCES } = require('./tool-registry.service');
+const { createAcademicTools } = require('./academic-tools.service');
 const { readToolSpill } = require('../conversation/context-compaction.service');
 const { RagService } = require('../rag/rag.service');
 const { aiService } = require('../llm/ai.service');
@@ -168,7 +169,7 @@ const builtinTools = [
   },
 ];
 
-for (const t of builtinTools) {
+for (const t of [...builtinTools, ...createAcademicTools()]) {
   toolRegistry.register(t);
 }
 
