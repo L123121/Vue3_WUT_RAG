@@ -67,6 +67,23 @@ beforeEach(() => {
   registryMod = require('../src/services/agent/tool-registry.service');
   agentTools = require('../src/services/agent/agent-tools.service');
   agentMod = require('../src/services/agent/agent.service');
+  // 调度机制测试用的确定性工具，不依赖任何业务工具
+  agentTools.toolRegistry.register({
+    name: 'test_echo',
+    description: '测试用回显工具',
+    timeoutMs: 1000,
+    parameters: {
+      type: 'object',
+      properties: { text: { type: 'string', maxLength: 200 } },
+      required: ['text'],
+      additionalProperties: false,
+    },
+    parallelSafe: true,
+    sideEffect: false,
+    handler: async ({ text }) => (text === 'fail'
+      ? { ok: false, content: '回显失败' }
+      : `echo: ${text}`),
+  });
 });
 
 describe('ToolRegistry（移植自存档版）', () => {
@@ -195,10 +212,11 @@ describe('ToolRegistry（移植自存档版）', () => {
 });
 
 describe('agent-tools（内置工具）', () => {
-  it('注册了 search_knowledge_base 与 calculate', () => {
+  it('注册了 search_knowledge_base 与 read_tool_artifact，计算器已移除', () => {
     const names = agentTools.getToolNames();
     expect(names).toContain('search_knowledge_base');
-    expect(names).toContain('calculate');
+    expect(names).toContain('read_tool_artifact');
+    expect(names).not.toContain('calculate');
   });
 
   it('search_knowledge_base 工具契约：返回字符串且不抛错（走真实 rag 链路，CJS mock 不生效）', async () => {
@@ -211,24 +229,15 @@ describe('agent-tools（内置工具）', () => {
     expect(/^(检索结果|知识库检索失败|工具.*超时)/.test(r)).toBe(true);
   });
 
-  it('calculate 用 mathjs 安全求值', async () => {
-    expect(await agentTools.executeTool('calculate', { expression: '2+3*4' })).toBe('2+3*4 = 14');
-    expect(await agentTools.executeTool('calculate', { expression: 'sqrt(16)' })).toBe('sqrt(16) = 4');
-  });
-
-  it('calculate 对非法表达式返回失败信息（不抛错）', async () => {
-    const r = await agentTools.executeTool('calculate', { expression: '1/0+??' });
-    expect(r).toContain('计算失败');
-  });
-
   it('executeToolDetailed 返回结构化 { ok, content }（替代中文正则猜成败）', async () => {
-    const ok = await agentTools.executeToolDetailed('calculate', { expression: '2+2' });
+    const ok = await agentTools.executeToolDetailed('test_echo', { text: '2+2' });
     expect(ok.ok).toBe(true);
-    expect(ok.content).toBe('2+2 = 4');
+    expect(ok.content).toBe('echo: 2+2');
+    expect(await agentTools.executeTool('test_echo', { text: 'hi' })).toBe('echo: hi');
 
-    const fail = await agentTools.executeToolDetailed('calculate', { expression: '1/0+??' });
+    const fail = await agentTools.executeToolDetailed('test_echo', { text: 'fail' });
     expect(fail.ok).toBe(false);
-    expect(fail.content).toContain('计算失败');
+    expect(fail.content).toContain('回显失败');
 
     const unknown = await agentTools.executeToolDetailed('not_exist', {});
     expect(unknown.ok).toBe(false);
@@ -279,8 +288,8 @@ describe('AgentService（单轮工具调度，原生 function calling）', () =>
       getCompletion: async () => ({
         content: '',
         toolCalls: [
-          { id: 'a', function: { name: 'calculate', arguments: '{"expression":"2+2"}' } },
-          { id: 'b', function: { name: 'calculate', arguments: '{"expression":"3+3"}' } },
+          { id: 'a', function: { name: 'test_echo', arguments: '{"text":"2+2"}' } },
+          { id: 'b', function: { name: 'test_echo', arguments: '{"text":"3+3"}' } },
         ],
         isMock: false,
       }),
@@ -295,7 +304,7 @@ describe('AgentService（单轮工具调度，原生 function calling）', () =>
       async *getCompletionStream(message, history, opts) {
         // 第一次调用（带 tools）：返回 tool_calls
         if (opts.tools && opts.tools.length > 0) {
-          yield { content: '', done: true, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'calculate', arguments: '{"expression":"2+2"}' } }] };
+          yield { content: '', done: true, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'test_echo', arguments: '{"text":"2+2"}' } }] };
           return;
         }
         // 第二次调用（工具结果回注）：返回最终答案
@@ -313,10 +322,10 @@ describe('AgentService（单轮工具调度，原生 function calling）', () =>
     expect(types).toContain('tool_result');
     expect(types).toContain('content');
     const toolCall = events.find(e => e.type === 'tool_call');
-    expect(toolCall.tool_call.name).toBe('calculate');
-    expect(toolCall.tool_call.arguments).toEqual({ expression: '2+2' });
+    expect(toolCall.tool_call.name).toBe('test_echo');
+    expect(toolCall.tool_call.arguments).toEqual({ text: '2+2' });
     const toolResult = events.find(e => e.type === 'tool_result');
-    expect(toolResult.tool_result.content).toContain('= 4');
+    expect(toolResult.tool_result.content).toContain('echo: 2+2');
     const content = events.filter(e => e.type === 'content' && e.content !== '' && e.content !== undefined);
     expect(content.some(c => c.content === '计算结果是 4')).toBe(true);
     const done = events.find(e => e.type === 'content' && (e.content === '' || e.done === true) && e.content !== '计算结果是 4');
@@ -339,7 +348,7 @@ describe('AgentService（单轮工具调度，原生 function calling）', () =>
       const fakeAi = {
         async *getCompletionStream(message, history, opts) {
           if (opts.tools && !opts.messages?.some((item) => item.role === 'tool')) {
-            yield { content: '', done: true, tool_calls: [{ id: 'artifact-call', function: { name: 'calculate', arguments: '{"expression":"2+2"}' } }] };
+            yield { content: '', done: true, tool_calls: [{ id: 'artifact-call', function: { name: 'test_echo', arguments: '{"text":"2+2"}' } }] };
             return;
           }
           const hasReadCall = opts.messages?.some((item) => item.role === 'assistant'
@@ -356,7 +365,7 @@ describe('AgentService（单轮工具调度，原生 function calling）', () =>
       };
       const svc = new agentMod.AgentService(fakeAi);
       svc.runTool = vi.fn(async (name, args, context) => {
-        if (name === 'calculate') {
+        if (name === 'test_echo') {
           return {
             ok: true,
             content: '大型工具结果'.repeat(20),
@@ -454,8 +463,8 @@ describe('AgentService（单轮工具调度，原生 function calling）', () =>
           // 轮次判断依据：opts.messages 中是否已含 tool 角色消息（chatStream 的 history 参数恒为 []）
           const hasToolResult = opts.messages?.some((m) => m.role === 'tool');
           if (!hasToolResult) {
-            // 第 1 轮决策：调 calculate
-            yield { content: '', done: true, tool_calls: [{ id: 'r1', function: { name: 'calculate', arguments: '{"expression":"2+2"}' } }] };
+            // 第 1 轮决策：调工具
+            yield { content: '', done: true, tool_calls: [{ id: 'r1', function: { name: 'test_echo', arguments: '{"text":"2+2"}' } }] };
           } else {
             // 第 2 轮决策（已含工具结果）：直接回答
             yield { content: '第一轮结果已获得', done: true, tool_calls: null };
@@ -487,7 +496,7 @@ describe('AgentService（单轮工具调度，原生 function calling）', () =>
         calls++;
         if (opts.tools && opts.tools.length > 0) {
           // 每次决策都返回同一个工具调用（模拟死循环）
-          yield { content: '', done: true, tool_calls: [{ id: `r${calls}`, function: { name: 'calculate', arguments: '{"expression":"1+1"}' } }] };
+          yield { content: '', done: true, tool_calls: [{ id: `r${calls}`, function: { name: 'test_echo', arguments: '{"text":"1+1"}' } }] };
           return;
         }
         yield { content: '收尾回答', done: false };
@@ -512,7 +521,7 @@ describe('AgentService（单轮工具调度，原生 function calling）', () =>
         if (opts.tools && opts.tools.length > 0) {
           round++;
           // 每轮都调不同参数的工具，但始终不直接回答
-          yield { content: '', done: true, tool_calls: [{ id: `r${round}`, function: { name: 'calculate', arguments: `{"expression":"${round}+1"}` } }] };
+          yield { content: '', done: true, tool_calls: [{ id: `r${round}`, function: { name: 'test_echo', arguments: `{"text":"${round}+1"}` } }] };
           return;
         }
         yield { content: '轮次用尽后的收尾', done: false };
@@ -589,7 +598,7 @@ describe('AgentService 2026-08-15 优化', () => {
           // 已含工具结果回注（tool 角色消息）→ 直接流出最终答案，不再调工具
           const hasToolResult = opts.messages?.some((m) => m.role === 'tool');
           if (!hasToolResult) {
-            yield { content: '', done: true, tool_calls: [{ id: 'c1', function: { name: 'calculate', arguments: '{"expression":"2+2"}' } }] };
+            yield { content: '', done: true, tool_calls: [{ id: 'c1', function: { name: 'test_echo', arguments: '{"text":"2+2"}' } }] };
           } else {
             yield { content: '计算结果是 4', done: false };
             yield { content: '', done: true, tool_calls: null };
@@ -603,7 +612,7 @@ describe('AgentService 2026-08-15 优化', () => {
     const svc = new agentMod.AgentService(fakeAi);
     const result = await svc.chat('2+2等于多少', []);
     expect(result.reply).toBe('计算结果是 4');
-    expect(result.tool.name).toBe('calculate');
+    expect(result.tool.name).toBe('test_echo');
     expect(Array.isArray(result.sources)).toBe(true);
     expect(result.trace?.toolCalls?.[0]?.ok).toBe(true);
     // 单工具耗时为独立计时（非累计）

@@ -66,7 +66,6 @@ const CLASSIFICATION_PROMPT = `你是一个意图分类器。请分析用户的�
 - knowledge_query: 明确涉及武汉理工校园事务、本地课程资料，或用户明确要求查询知识库/文档（如"学校食堂几点关门"、"奖学金怎么申请"、"数据结构复习重点"、"根据文档回答"）——需要检索校内知识库
 - general_chat: 普通对话、写作、翻译、编程和通用知识（如"你好"、"今天天气怎么样"、"帮我写首诗"、"什么是闭包"）——不需要检索知识库
 - complex_task: 多步/复合任务（如"帮我制定一个期末复习计划"、"综合对比两个方案"、"规划考研时间线"）——需要多步规划与多个信息来源
-- calculation_task: 明确数学计算（如"128 乘以 46"、"sqrt(144)"、"23 的 3 次方"）——需要调用计算工具
 
 规则：
 1. 只返回 JSON，不要其他内容
@@ -93,7 +92,7 @@ class IntentRouter {
    * 快速路由：只做零误判的关键词匹配，不调用 LLM（~0ms）
    *
    * 设计原则：
-   *   fastRoute 只保留高置信规则：问候、多步任务、数学计算，以及明确命中
+   *   fastRoute 只保留高置信规则：问候、多步任务，以及明确命中
    *   校园/本地课程资料/文档检索词的知识问答。其余意图返回 null，默认走 chat。
    *
    * @param {string} message - 用户消息
@@ -123,19 +122,6 @@ class IntentRouter {
         route: "agent",
         tool: null,
         reason: "关键词匹配：多步/复合任务",
-      };
-    }
-
-    const hasNumericExpression = /\d|sqrt\s*\(|(?:sin|cos|tan|log|abs)\s*\(|\bpi\b/i.test(lower);
-    const hasCalculationCue = /(算一下|计算|求值|等于多少|是多少|次方|平方|立方|平方根|开方|[+\-*/^×÷])/i.test(lower);
-    if (hasNumericExpression && hasCalculationCue) {
-      return {
-        intent: INTENT_TYPES.CALCULATION_TASK,
-        confidence: 0.9,
-        params: {},
-        route: "agent",
-        tool: "calculate",
-        reason: "能力匹配：数学计算工具",
       };
     }
 

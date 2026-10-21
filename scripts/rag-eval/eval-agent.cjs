@@ -15,8 +15,8 @@
  *   node eval-agent.cjs --with-llm     # Phase 1 + Phase 2（消耗 LLM 配额，24 次调用以内）
  *
  * 数据集：dataset/agent-routing-qa.json
- *   - expectedRoute: chat | agent | rag（fastRoute 未命中时兜底为 rag）
- *   - expectedTool: search_knowledge_base | calculate | null（null 表示不强制要求工具选择，
+ *   - expectedRoute: chat | agent | rag（fastRoute 未命中时兜底为 chat）
+ *   - expectedTool: search_knowledge_base | null（null 表示不强制要求工具选择，
  *     仅 rag 兜底下闲聊类样本，LLM 直接回答或调工具均不算错误，只记录行为）
  */
 
@@ -36,10 +36,10 @@ const WITH_LLM = process.argv.includes("--with-llm");
 
 // 从 backend 加载服务（offline，无需启动服务器/无需 RAG_EVAL_COOKIE）
 const BACKEND_SRC = path.join(__dirname, "..", "..", "backend", "src");
-const { IntentRouter } = require(path.join(BACKEND_SRC, "services", "intent-router.service"));
+const { IntentRouter } = require(path.join(BACKEND_SRC, "services", "agent", "intent-router.service"));
 
 function routeOf(fastRouteResult) {
-  return fastRouteResult ? fastRouteResult.route : "rag"; // fastRoute 未命中 → 兜底 rag
+  return fastRouteResult ? fastRouteResult.route : "chat"; // fastRoute 未命中 → 与生产一致兜底 chat
 }
 
 async function phase1(dataset) {
@@ -82,7 +82,7 @@ async function phase2(dataset) {
   console.log("=".repeat(60));
 
   // 延迟加载 AgentService（会初始化 rag.service 等重依赖，仅本阶段需要）
-  const { AgentService } = require(path.join(BACKEND_SRC, "services", "agent.service"));
+  const { AgentService } = require(path.join(BACKEND_SRC, "services", "agent", "agent.service"));
   const agent = new AgentService(null);
   const router = new IntentRouter(null);
 

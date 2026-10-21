@@ -16,7 +16,7 @@
 - **自动意图路由**：后端自动决定进入 `chat`、`rag` 或 `agent`，前端无需手动切换 RAG。
 - **RAG 知识库**：支持文档上传、批量录入、两级分类、统计、重索引、来源引用和反馈。
 - **校园百科**：知识库文档的上架阅读视图（`/wiki`），默认不上架、管理员逐条放开，演示用虚构语料按治理规则禁止上架；分类树、目录锚点、标题与正文搜索、可读 slug 链接，并与对话来源引用双向跳转。
-- **Agent 工具调用**：内置知识库检索 `search_knowledge_base`、受控工件读取 `read_tool_artifact` 与数学计算 `calculate`；大结果可按需读取。
+- **Agent 工具调用**：内置知识库检索 `search_knowledge_base` 与受控工件读取 `read_tool_artifact`；大结果可按需读取。
 - **文件对话与 OCR**：支持图片、PDF、DOCX、PPTX、TXT、Markdown；扫描件和图片可走视觉 OCR。
 - **会话管理**：创建、切换、重命名、删除、重试、编辑重发、任意消息分叉新会话、收藏和后端持久化。
 - **公开分享**：登录用户可生成只读分享快照，访问 `/share/:code` 无需登录。
@@ -47,9 +47,8 @@ flowchart TD
     ORCH --> ROUTER["IntentRouter"]
     ROUTER -- "问候/闲聊" --> CHAT["chat（普通对话）"]
     ROUTER -- "命中校园/课程/文档检索规则" --> RAG["rag（知识库检索）"]
-    ROUTER -- "数学计算/复合任务" --> AGENT["agent（工具调用）"]
+    ROUTER -- "复合任务" --> AGENT["agent（工具调用）"]
     ROUTER -- "未命中任何高置信规则（兜底）" --> CHAT
-    AGENT --> CALC["calculate"]
     AGENT --> SEARCH["search_knowledge_base"]
     CHAT --> SSE["SSE 流式返回 content / sources / trace"]
     RAG --> SSE

@@ -12,7 +12,6 @@ const INTENT_TYPES = Object.freeze({
   KNOWLEDGE_QUERY: "knowledge_query", // 校内知识问答 → rag
   GENERAL_CHAT: "general_chat",       // 普通闲聊 → chat
   COMPLEX_TASK: "complex_task",       // 多步/复合任务 → agent
-  CALCULATION_TASK: "calculation_task", // 明确数学计算 → agent/calculate
 });
 
 const ROUTES = Object.freeze({
@@ -24,13 +23,7 @@ const ROUTES = Object.freeze({
 const ROUTE_NAMES = Object.freeze(Object.keys(ROUTES));
 const ALLOWED_ROUTES = new Set(ROUTE_NAMES);
 
-// 计算任务复用 agent 链路，单独列出是为了保留 fastRoute 原有的 intent 语义
-const INTENT_ROUTE_OVERRIDES = Object.freeze({
-  [INTENT_TYPES.CALCULATION_TASK]: "agent",
-});
-
 const routeOfIntent = (intent) => {
-  if (INTENT_ROUTE_OVERRIDES[intent]) return INTENT_ROUTE_OVERRIDES[intent];
   const entry = ROUTE_NAMES.find((route) => ROUTES[route].intent === intent);
   return entry || "chat";
 };

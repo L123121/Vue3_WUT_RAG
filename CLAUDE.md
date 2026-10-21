@@ -96,7 +96,6 @@ chat.store（聚合层）→ 页面统一接口
   ├─ fastRoute（零成本 ~0ms，不调 LLM）
   │    问候/感谢/告别 → route: chat（纯 LLM，不触发检索）
   │    明确多步任务（规划/分析/对比/权衡…）→ route: agent
-  │    明确数学表达式 + 计算提示 → route: agent / calculate
   │    其余模糊意图 → null（不硬路由，减少误判面）
   ├─ classify（LLM 分类兜底，INTENT_CLASSIFY_ENABLED=true 才启用）
   │    15s 超时 + JSON 解析失败 → 兜底，不阻塞
@@ -129,9 +128,8 @@ chat.store（聚合层）→ 页面统一接口
 |------|------|------|
 | `search_knowledge_base` | 复用 rag.service 全链路检索（支持 category 过滤） | 15s |
 | `read_tool_artifact` | 按 opaque artifactId 读取当前运行的大型工具结果 | 3s |
-| `calculate` | mathjs 安全求值（模块级 create(all)，防注入） | 3s |
 
-教务系工具（查成绩/课表等）因无教务系统接入未移植。
+计算器 `calculate` 已于 2026-10-21 移除（使用价值低，算术问题走 chat 由 LLM 直接回答）。教务系工具（查成绩/课表等）仅预注册、默认禁用，待正式接口与授权接入。
 
 **L3 记忆系统**：`ConversationOrchestrator` 调用 `MemoryService.buildMemoryContext()`，将用户画像、相关长期记忆和短期摘要作为 system history 注入 Chat/RAG/Agent；Agent 内部仍通过 `buildMemorySummary` 处理最近会话指代。长期记忆 embedding 在序列化前完成，并通过用户级写队列避免进程内并发覆盖。
 
@@ -187,7 +185,7 @@ chat.store（聚合层）→ 页面统一接口
 - `intent-router.service.js` — 意图路由（V2.0）：fastRoute 零成本关键词 + LLM 分类兜底（默认关）+ 未命中时 chat 兜底
 - `wiki.service.js` — 校园百科治理层：以知识库 `document:<docId>` 为唯一正文源，服务端解析 front-matter、正文修订/stale、模拟语料判定（禁止上架）、上下架元数据与 slug 别名存 `wiki:entries`/`wiki:slugs` 两个 hash；RAG 命中时可与 Qdrant 候选混合
 - `agent.service.js` — Agent 工具调度（V2.0）：L2 有界多轮（maxToolRounds=2 + 无进展检测）+ L3 会话记忆摘要 + 工件落盘/按需读取 + L4 agent tracer
-- `agent-tools.js` — Agent 工具注册表：search_knowledge_base + read_tool_artifact + calculate（mathjs 安全求值）
+- `agent-tools.js` — Agent 工具注册表：search_knowledge_base + read_tool_artifact（教务工具预注册、默认禁用）
 - `conversation-orchestrator.service.js` — Chat/RAG/Agent 统一编排、持久记忆注入、失败降级与结果保存
 - `tool-registry.service.js` — JSON Schema 参数校验、取消传播、超时闸门与工具元数据
 - `tool-registry.service.js` — 工具注册器（TOOL_SOURCES.BUILTIN，可扩展）
@@ -423,7 +421,7 @@ chat.store（聚合层）→ 页面统一接口
   - ⑩ rag.service chatStream 同类修复：RAG 生成中途失败且 fullReply 非空时不降级纯 LLM 重发，保留已有内容礼貌收尾（fallbackReason=rag_pipeline_error）；无内容时保留原降级路径。agentic-rag.service 本就有此守卫，此处补齐
   - ⑪ 检索精确缓存不写空结果：向量库瞬时故障被 catch 吞掉后 candidates=[]，此前照写缓存 → TTL 内同一查询全部命中空缓存、即便故障恢复也答"无可靠来源"（语义缓存本有 length>0 闸门，精确缓存此前漏了）
   - ⑫ usage 下发补全：agent 收尾与纯 chat 路由（orchestrator）此前丢弃 chunk.usage，token 用量从未到达前端；agent.decide 超时改走 config.agent.decideTimeoutMs（此前硬编码 15s 与 AGENT_DECIDE_TIMEOUT_MS 旋钮脱节）；agent-traces.jsonl 加 10MB 轮转（rename .1）
-- 未修（记录）：非流式 chat/rag 端点未向 getCompletion 传 signal（客户端断开后 LLM 调用跑完，占 LLM_CONCURRENCY=3 槽位；需 ai.service.getCompletion 先支持 signal 才能收敛）；两 controller 的 sources/content/error 事件 traceId 有无仍不一致，前端已兼容属潜在脆弱点
+- 未修（记录）：~~非流式 chat/rag 端点未向 getCompletion 传 signal~~（已修复，见第 27 轮）；两 controller 的 sources/content/error 事件 traceId 有无仍不一致，前端已兼容属潜在脆弱点
 - 测试：前端 114、后端 427 用例通过
 
 **25. rag.service 拆分收尾 + backend 日志统一收敛 logEvent（2026-09-06）**
@@ -445,6 +443,22 @@ chat.store（聚合层）→ 页面统一接口
 - ③ faithfulness 硬门禁（`rag/faithfulness-gate.service.js`）：在 grounding 标注之上叠加门禁决策。`RAG_FAITHFULNESS_GATE=off`（默认，完全现状）| `warn`（低溯源回答发 `faithfulness.gate` SSE 事件，前端琥珀警示条）| `enforce`（block：流式由前端在 onDone 最终 flush 后把气泡正文替换为拒答文案——gate 事件先于 [DONE] 到达而 RAF 此刻才刷屏，替换必须延后否则被覆盖；非流式 drain 路径直接替换 reply，未过校验的回答不返给调用方）。阈值 `RAG_FAITHFULNESS_GATE_MIN_COVERAGE`(0.35) 与单句 minSupport 解耦。前端链路：runEvents 类型映射 + chat.js 分发 + messagePatches 挂载 + faithfulness-gate fragment 横幅；`clearMessageAttemptState` 清 gate 防重试串扰。
 - ④ 消息列表进一步虚拟化（MessageList.vue）：content-visibility 只省布局/绘制，Vue 仍为全部历史气泡做 vnode diff——流式期间 messages 数组每帧被替换，开销被放大 N 倍。已固化气泡加 `v-memo`（依赖：消息对象引用 + 对应问题消息 + 是否流式中 + decisionDraft），流式帧里只有当前流式气泡参与 diff。前提是消息写入全链路不可变（updateMessage/applyFlush 本就如此；retryMessage/editAndResend 两处用户消息原地突变改为数组元素替换）。DynamicScroller 前车之鉴（流式跳动）不再重蹈：DOM 结构与滚动行为零变化。
 - 测试：`cost-budget.test.js`(7)、`faithfulness-gate.test.js`(8，含 drainChat block 拦截)；前端补 runEvents.gate 分发、patch 规则、fragment 派生、重试清 gate 断言。后端 fast 533 用例、前端全部用例通过；`lint:check`/`typecheck`/`build` 清零。
+
+**27. 后端加固：伪造 system 消息 / JWT 撤销 / 入参与错误格式 / 模型就绪 / 停机排空 / 共享限流（2026-10-21）**
+- ① 客户端 history 可伪造 `role:system`（`buildHistoryMessages` 原样保留 system，等于把系统指令权交给请求方）：新增 `utils/chat-request.js`，`/api/stream`、`/api/rag/chat`、`/api/rag/chat/stream` 入口统一校验 message（非空字符串、≤8000 字）并清洗 history（只留 user/assistant、只保留 role+content）；服务端记忆注入的 system 消息不受影响
+- ② JWT 撤销：token 带 `jti`；`token-revocation.service.js`（SQLite 两表）——logout 将 jti 拉黑至自然过期，改密码写用户级截止时间（iat 早于它的 token 全部失效）并为当前会话重签 cookie
+- ③ 错误响应统一为 `{ success:false, code?, message, error }`（message 与 error 同值，兼容前端两种读法）：`errorResponse`、全局错误处理、5 个限流器 429 体
+- ④ 就绪探针补 round-22 缺口：启动预热 embedding 模型，加载中 `/api/ready` 报 starting、加载失败报 unavailable（部署脚本/healthcheck 会拦住，不再静默降级上线；`READINESS_REQUIRE_EMBEDDING_MODEL=false` 放行）；模型加载改为进程内共享（此前 4 个 EmbeddingService 实例各加载一份 ONNX）
+- ⑤ 停机排空：`utils/stream-registry.js` 登记进行中的 SSE 流；SIGTERM 后拒绝新流（503 SERVER_SHUTTING_DOWN）、等待最长 `SHUTDOWN_DRAIN_TIMEOUT_MS`(25s)，超时流收到明确的终止事件；存储在排空后才关闭；compose `stop_grace_period: 35s`
+- ⑥ 限流跨实例：配置 `REDIS_URL` 时 5 个限流器计数走 Redis（Lua 原子 INCR+PEXPIRE），Redis 故障退回本实例内存计数；`LLM_CONCURRENCY` 仍按实例计算（已写入 deploy/README 多实例注意事项）
+- ⑦ 第 24 轮记录的"非流式未传 signal"已在此前修复（`getCompletion` 支持 signal、`/api/rag/chat` 已透传）；本轮补上管理员评测流 `/api/eval/run`：断开即停止后续用例，残缺评测不入库
+- 测试：新增 chat-request(5)、stream-registry(2)、rate-limit-store(2)，middleware/chat.controller/embedding/dependency-health 补用例；后端全量 682 用例通过，lint 清零
+
+**28. 做减法：移除 Agent 计算器（2026-10-21）**
+- 移除 `calculate` 工具、`CALCULATION_TASK` 意图与 fastRoute 计算规则、Agent 系统提示中的计算条目，卸载 `mathjs`（含 9 个传递依赖）；算术问题现由 fastRoute 未命中兜底走 chat，LLM 直接回答
+- Agent 调度测试改用测试内注册的 `test_echo` 工具，只验证调度机制、不再依赖具体业务工具
+- 顺带修复 `eval-agent.cjs`：require 路径停留在服务分目录前（脚本此前无法运行）、未命中兜底误写 rag（生产早已改 chat）；RT19/RT20 标注随之改为 chat
+- Phase 1 路由准确率 20/24：剩余 4 条（RT13 红黑树、RT14 软件工程面试、RT21 深度学习、RT24 转专业）为真实漏判——问题落在 chat 不检索知识库，待评估是否扩充 KNOWLEDGE_PATTERNS
 
 ### ❌ 尝试但退回
 
@@ -565,6 +579,10 @@ RAG_FAITHFULNESS_GATE_MIN_COVERAGE=0.35  # 整篇回答溯源句占比低于该�
 COST_GATE_ENABLED=true
 COST_GATE_MAX_LLM_CALLS=16
 COST_GATE_MAX_TOTAL_TOKENS=120000
+
+# 运行时（2026-10-21）
+READINESS_REQUIRE_EMBEDDING_MODEL=true # embedding 模型加载失败时 /api/ready 返回 503；本地无模型开发设 false
+SHUTDOWN_DRAIN_TIMEOUT_MS=25000 # SIGTERM 后等待进行中 SSE 流的最长时间（compose stop_grace_period 需更大）
 
 # 跨文档问题分解（对比/列举类拆实体级子查询扩召回）
 RAG_QUERY_DECOMPOSE_ENABLED=true

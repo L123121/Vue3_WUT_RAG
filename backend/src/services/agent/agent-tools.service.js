@@ -6,7 +6,6 @@
  * 内置工具：
  *   - search_knowledge_base：知识库 RAG 检索（复用 rag.service）
  *   - read_tool_artifact：读取当前 Agent 运行产生的受控大型工具结果工件
- *   - calculate：数学计算（mathjs 安全求值）
  * 个人教务工具仅预注册（默认禁用），正式接口与授权接入后再开放。
  */
 
@@ -15,12 +14,10 @@ const { createAcademicTools } = require('./academic-tools.service');
 const { readToolSpill } = require('../conversation/context-compaction.service');
 const { RagService } = require('../rag/rag.service');
 const { aiService } = require('../llm/ai.service');
-const { create, all } = require('mathjs');
 
 const ragService = new RagService(aiService);
-const math = create(all);
 
-// 工具执行超时分级：知识库检索走完整 RAG 链路，给 15s；本地计算 3s
+// 工具执行超时分级：知识库检索走完整 RAG 链路，给 15s；本地工件读取 3s
 const TIMEOUT_SCHOOL = 15000;
 const TIMEOUT_LOCAL = 3000;
 
@@ -132,41 +129,6 @@ const builtinTools = [
     },
   },
 
-  {
-    name: 'calculate',
-    description: '执行数学计算。支持加减乘除、乘方、开方、三角函数等。当用户需要计算时使用。',
-    category: '工具',
-    source: TOOL_SOURCES.BUILTIN,
-    timeoutMs: TIMEOUT_LOCAL,
-    parameters: {
-      type: 'object',
-      properties: {
-        expression: {
-          type: 'string',
-          description: '数学表达式，如 "2+3*4", "sqrt(16)", "sin(3.14/2)"',
-          maxLength: 200,
-        }
-      },
-      required: ['expression'],
-      additionalProperties: false,
-    },
-    parallelSafe: true,
-    sideEffect: false,
-    handler: async (args) => {
-      try {
-        const expr = args.expression;
-        // 使用 mathjs 安全求值（模块级 create(all) 实例），避免 new Function() 注入风险
-        const result = math.evaluate(expr);
-        if (typeof result !== 'number' || !isFinite(result)) {
-          return { ok: false, content: `计算结果无效: ${result}` };
-        }
-        return `${args.expression} = ${result}`;
-      } catch (err) {
-        // 结构化失败（executeToolDetailed 识别 ok=false），兼容字符串契约（executeTool 取 content）
-        return { ok: false, content: `计算失败: ${err.message}` };
-      }
-    }
-  },
 ];
 
 for (const t of [...builtinTools, ...createAcademicTools()]) {

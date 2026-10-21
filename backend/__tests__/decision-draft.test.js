@@ -67,10 +67,6 @@ describe('route-registry 路由分类唯一事实来源', () => {
     expect(intentOfRoute('agent')).toBe(INTENT_TYPES.COMPLEX_TASK);
   });
 
-  it('计算任务复用 agent 链路', () => {
-    expect(routeOfIntent(INTENT_TYPES.CALCULATION_TASK)).toBe('agent');
-  });
-
   it('未知意图/路由有安全兜底，不会产出 undefined 路由', () => {
     expect(routeOfIntent('not_an_intent')).toBe('chat');
     expect(intentOfRoute('nope')).toBe(INTENT_TYPES.GENERAL_CHAT);

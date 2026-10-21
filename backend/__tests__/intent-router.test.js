@@ -62,9 +62,6 @@ describe('IntentRouter.fastRoute', () => {
     ['多步-综合对比', '综合对比一下两个方案', INTENT_TYPES.COMPLEX_TASK],
     ['多步-规划时间线', '帮我规划考研时间线', INTENT_TYPES.COMPLEX_TASK],
     ['多步-权衡', '帮我权衡一下利弊', INTENT_TYPES.COMPLEX_TASK],
-    ['计算-中文乘法', '帮我算一下 128 乘以 46 等于多少', INTENT_TYPES.CALCULATION_TASK],
-    ['计算-sqrt', 'sqrt(144) 是多少', INTENT_TYPES.CALCULATION_TASK],
-    ['计算-次方', '23 的 3 次方等于多少', INTENT_TYPES.CALCULATION_TASK],
   ];
 
   for (const [desc, input, intent] of agentCases) {
@@ -101,6 +98,9 @@ describe('IntentRouter.fastRoute', () => {
     ['普通写作', '帮我写一封请假邮件'],
     ['通用编程知识', '什么是闭包'],
     ['普通翻译', '把这句话翻译成英文'],
+    // 计算器工具已移除：算术问题交给普通对话由 LLM 直接回答
+    ['算术-中文乘法', '帮我算一下 128 乘以 46 等于多少'],
+    ['算术-sqrt', 'sqrt(144) 是多少'],
   ];
   for (const [desc, input] of nullCases) {
     it(`不硬路由：${desc} → null（走兜底 chat）`, () => {

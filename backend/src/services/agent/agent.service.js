@@ -54,7 +54,7 @@ function addUsage(total, usage) {
  *   用户问题
  *     ↓
  *   ① LLM 原生工具调用（opts.tools 携带 schema，流式解析 delta.tool_calls）
- *     → 决定调 search_knowledge_base / calculate / 直接回答
+ *     → 决定调 search_knowledge_base / 直接回答
  *     ↓
  *   ② 确定性执行工具（本地/秒级，含超时闸门，多工具并行）
  *     ↓
@@ -84,10 +84,9 @@ const SYSTEM_PROMPT = `你是"武理小精灵"，武汉理工大学校园助手�
 
 规则：
 1. 如果问题需要检索校园知识库（食堂/图书馆/宿舍/课程/政策/奖学金/面试题等）→ 调用 search_knowledge_base
-2. 如果问题需要数学计算 → 调用 calculate
-3. 如果不需要任何工具，直接回答即可
-4. 调用工具后，必须基于工具结果给出最终回答；如果工具结果不足以回答，请如实说明
-5. 回答用简洁的中文`;
+2. 如果不需要任何工具，直接回答即可
+3. 调用工具后，必须基于工具结果给出最终回答；如果工具结果不足以回答，请如实说明
+4. 回答用简洁的中文`;
 
 /**
  * Agent 决策失败专用错误：控制器据 agentShouldFallback 标记降级回 RAG 链路
