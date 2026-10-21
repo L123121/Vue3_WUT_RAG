@@ -83,6 +83,11 @@ let _sparseStatsVersion = 0;
 // new EmbeddingService() 实例共享同一份观测值。
 let _degradedEncodeCount = 0;
 let _lastDegradedAt = null;
+// 模型加载在进程内按 (model, cacheDir, localFilesOnly) 共享：多个实例不再各自加载一份 ONNX 会话。
+// 加载失败会被缓存（与此前单实例行为一致），因此 failed 是进程级的确定状态。
+const _modelLoads = new Map();
+let _modelState = 'idle'; // idle | loading | loaded | failed
+let _modelLoadError = null;
 
 /**
  * 检索侧 embedding 健康快照（同步、无副作用，不触发模型加载）
@@ -90,7 +95,9 @@ let _lastDegradedAt = null;
  */
 function getEmbeddingHealth() {
   return {
-    status: _degradedEncodeCount > 0 ? 'degraded' : 'ok',
+    status: _degradedEncodeCount > 0 || _modelState === 'failed' ? 'degraded' : 'ok',
+    modelState: _modelState,
+    ...(_modelLoadError ? { modelLoadError: _modelLoadError } : {}),
     degradedEncodeCount: _degradedEncodeCount,
     lastDegradedAt: _lastDegradedAt,
     sparseStats: _sparseStats
@@ -140,6 +147,17 @@ class EmbeddingService {
     if (this._localModel) return this._localModel;
     if (this._modelLoading) return this._modelLoading;
 
+    const loadKey = `${this.model}|${this.cacheDir}|${this.localFilesOnly}`;
+    const shared = _modelLoads.get(loadKey);
+    if (shared) {
+      this._modelLoading = shared.then((extractor) => {
+        this._localModel = extractor;
+        return extractor;
+      });
+      return this._modelLoading;
+    }
+
+    _modelState = 'loading';
     this._modelLoading = (async () => {
       try {
         const { env, pipeline } = require('@huggingface/transformers');
@@ -155,15 +173,25 @@ class EmbeddingService {
         });
         logEvent('info', 'embedding_local_model_loaded', { model: this.model, dim: DEFAULT_DENSE_DIM });
         this._localModel = extractor;
+        _modelState = 'loaded';
         return extractor;
       } catch (err) {
         logEvent('warn', 'embedding_local_model_load_failed', { error: err.message });
         this._localModel = null;
+        _modelState = 'failed';
+        _modelLoadError = err.message;
         return null;
       }
     })();
+    _modelLoads.set(loadKey, this._modelLoading);
 
     return this._modelLoading;
+  }
+
+  /** 启动预热：让模型缺失在就绪探针阶段暴露，而不是等到第一条用户查询才静默降级 */
+  async warmup() {
+    const extractor = await this._ensureLocalModel();
+    return Boolean(extractor);
   }
 
   /**

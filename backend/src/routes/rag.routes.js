@@ -2,15 +2,17 @@
 
 const { Router } = require('express');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
+const { sharedStoreOption } = require('../middleware/rate-limit-store');
 const { requireAuth, requireAdmin } = require('../middleware/auth.middleware');
 const ragController = require('../controllers/rag.controller');
 
 const router = Router();
 
 const documentUploadLimiter = rateLimit({
+  ...sharedStoreOption('rag-document-upload'),
   windowMs: 60 * 60 * 1000,
   max: 60,
-  message: { success: false, code: 'RATE_LIMIT', error: '文档上传过于频繁，请稍后再试' },
+  message: { success: false, code: 'RATE_LIMIT', message: '文档上传过于频繁，请稍后再试', error: '文档上传过于频繁，请稍后再试' },
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => req.userId || ipKeyGenerator(req.ip),

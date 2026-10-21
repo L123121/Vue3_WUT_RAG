@@ -42,6 +42,31 @@ describe('auth.middleware', () => {
     expect(res.clearCookie).toHaveBeenCalledWith('auth_token', expect.any(Object));
   });
 
+  it('logout 注销的 token 与改密前签发的 token 被拒绝', () => {
+    const { tokenRevocationStore } = require('../src/services/auth/token-revocation.service');
+    const jwt = require('jsonwebtoken');
+    const userId = `revoke_${Date.now()}`;
+    const token = generateToken({ userId, username: 'test' });
+    const claims = jwt.decode(token);
+    expect(claims.jti).toEqual(expect.any(String));
+
+    const authenticate = (value) => {
+      const req = { cookies: { auth_token: value } };
+      authMiddleware(req, { clearCookie: vi.fn() }, vi.fn());
+      return req.userId;
+    };
+    expect(authenticate(token)).toBe(userId);
+
+    tokenRevocationStore.revokeToken(claims.jti, claims.exp);
+    expect(authenticate(token)).toBeNull();
+
+    const oldToken = jwt.sign({ userId, iat: Math.floor(Date.now() / 1000) - 60 }, process.env.JWT_SECRET, { expiresIn: '1h' });
+    expect(authenticate(oldToken)).toBe(userId);
+    tokenRevocationStore.revokeAllForUser(userId);
+    expect(authenticate(oldToken)).toBeNull();
+    expect(authenticate(generateToken({ userId, username: 'test' }))).toBe(userId);
+  });
+
   it('requireAuth 有 userId 放行', () => {
     const next = vi.fn();
     requireAuth({ userId: 'u1' }, {}, next);
@@ -82,6 +107,6 @@ describe('response utils', () => {
     const res = { status: vi.fn().mockReturnThis(), json: vi.fn() };
     errorResponse(res, '未找到', 404);
     expect(res.status).toHaveBeenCalledWith(404);
-    expect(res.json).toHaveBeenCalledWith({ success: false, message: '未找到' });
+    expect(res.json).toHaveBeenCalledWith({ success: false, message: '未找到', error: '未找到' });
   });
 });

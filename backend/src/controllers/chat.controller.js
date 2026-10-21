@@ -12,6 +12,9 @@ const {
 } = require("../utils/sse-events");
 const { logEvent } = require("../services/observability/observability.service");
 const { emptyDraft, applyEvent, finalize } = require("../utils/decision-draft");
+const { ChatRequestError, parseChatRequest } = require("../utils/chat-request");
+const { errorResponse } = require("../utils/response");
+const { trackStream, isDraining, SHUTDOWN_CODE, SHUTDOWN_MESSAGE } = require("../utils/stream-registry");
 
 function createChatHandlers(conversationOrchestrator, dependencies = {}) {
   const enqueueJob = dependencies.enqueueJob || jobService.enqueueJob;
@@ -19,14 +22,25 @@ function createChatHandlers(conversationOrchestrator, dependencies = {}) {
     let abortController = null;
     let onClientClose = null;
     let streamContext = null;
+    let untrackStream = null;
     const cleanupClientClose = () => {
       if (onClientClose) res.removeListener("close", onClientClose);
+      untrackStream?.();
     };
 
     try {
+      if (isDraining()) return errorResponse(res, SHUTDOWN_MESSAGE, 503, SHUTDOWN_CODE);
       const body = req.body || {};
-      const { message, history } = body;
-      if (!message) return res.status(400).json({ error: "消息内容不能为空" });
+      let parsed;
+      try {
+        parsed = parseChatRequest(body);
+      } catch (validationError) {
+        if (validationError instanceof ChatRequestError) {
+          return errorResponse(res, validationError.message, 400, validationError.code);
+        }
+        throw validationError;
+      }
+      const { message, history } = parsed;
 
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
@@ -43,6 +57,7 @@ function createChatHandlers(conversationOrchestrator, dependencies = {}) {
       abortController = new AbortController();
       onClientClose = () => abortController.abort();
       res.on("close", onClientClose);
+      untrackStream = trackStream({ res, abortController, streamContext });
 
       const context = {
         traceId: req.traceId,
@@ -58,7 +73,7 @@ function createChatHandlers(conversationOrchestrator, dependencies = {}) {
       // agent 决策草稿：tool_call 出现即被废弃，不计入审计答案。
       // 状态机复用 utils/decision-draft，与 agent/编排层同源（此前三处各写一份）
       let draft = emptyDraft();
-      for await (const event of conversationOrchestrator.chatStream(message, history || [], context)) {
+      for await (const event of conversationOrchestrator.chatStream(message, history, context)) {
         draft = applyEvent(draft, event);
         if (event.type === "sources") audit.sources = event.sources || [];
         if (event.type === "trace" && event.trace?.traceId) audit.traceId = event.trace.traceId;
@@ -66,6 +81,10 @@ function createChatHandlers(conversationOrchestrator, dependencies = {}) {
       }
       const { reply: finalAnswer } = finalize(draft);
       audit.answer = finalAnswer;
+      if (res.writableEnded) {
+        cleanupClientClose();
+        return;
+      }
 
       writeRunCompleted(res, streamContext);
       try {

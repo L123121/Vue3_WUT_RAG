@@ -3,9 +3,11 @@
  */
 const express = require('express');
 const rateLimit = require('express-rate-limit');
+const { sharedStoreOption } = require('../middleware/rate-limit-store');
 const authService = require('../services/auth/auth.service');
 const { COOKIE_NAME, requireAuth, generateToken } = require('../middleware/auth.middleware');
 const { logEvent } = require('../services/observability/observability.service');
+const { tokenRevocationStore } = require('../services/auth/token-revocation.service');
 
 const router = express.Router();
 
@@ -29,18 +31,20 @@ const sendAuthError = (res, error, fallback = '认证失败') => {
 
 // 注册限流：每小时最多 3 次
 const registerLimiter = rateLimit({
+  ...sharedStoreOption('auth-register'),
   windowMs: 60 * 60 * 1000,
   max: 3,
-  message: { success: false, code: 'RATE_LIMIT', message: '注册过于频繁，请稍后再试' },
+  message: { success: false, code: 'RATE_LIMIT', message: '注册过于频繁，请稍后再试', error: '注册过于频繁，请稍后再试' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 // 登录限流：每分钟最多 10 次，防暴力破解
 const loginLimiter = rateLimit({
+  ...sharedStoreOption('auth-login'),
   windowMs: 60 * 1000,
   max: 10,
-  message: { success: false, code: 'RATE_LIMIT', message: '登录尝试过于频繁，请稍后再试' },
+  message: { success: false, code: 'RATE_LIMIT', message: '登录尝试过于频繁，请稍后再试', error: '登录尝试过于频繁，请稍后再试' },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -76,6 +80,8 @@ router.post('/change-password', requireAuth, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body || {};
     const user = await authService.changePassword(req.userId, currentPassword, newPassword);
+    tokenRevocationStore.revokeAllForUser(user.id);
+    setAuthCookie(req, res, generateToken({ userId: user.id, username: user.username, role: user.role }));
     res.json({ success: true, message: '密码修改成功', data: { user } });
   } catch (error) {
     logEvent('error', 'auth_password_change_failed', { error: error.message });
@@ -102,6 +108,13 @@ router.get('/me', async (req, res) => {
 
 // POST /api/auth/logout
 router.post('/logout', (req, res) => {
+  if (req.tokenClaims?.jti) {
+    try {
+      tokenRevocationStore.revokeToken(req.tokenClaims.jti, req.tokenClaims.exp);
+    } catch (error) {
+      logEvent('error', 'auth_logout_revoke_failed', { error: error.message });
+    }
+  }
   // secure 标志需与设置时一致（setAuthCookie），否则 HTTPS 下 Secure cookie 无法清除
   const isSecure = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https';
   res.clearCookie(COOKIE_NAME, { httpOnly: true, sameSite: 'lax', secure: isSecure, path: '/', maxAge: 0 });

@@ -7,6 +7,8 @@ const { DocumentService } = require('../services/knowledge/document.service');
 const { redis: store } = require('../services/memory/memory-store.service');
 const { MemoryService } = require('../services/memory/memory.service');
 const { successResponse, errorResponse } = require('../utils/response');
+const { ChatRequestError, parseChatRequest } = require('../utils/chat-request');
+const { trackStream, isDraining, SHUTDOWN_CODE, SHUTDOWN_MESSAGE } = require('../utils/stream-registry');
 const {
   createStreamContext,
   writeRunCompleted,
@@ -96,6 +98,16 @@ function isAdminRequest(req) {
   return req.userId === 'admin';
 }
 
+function parseChatRequestOrRespond(req, res) {
+  try {
+    return parseChatRequest(req.body);
+  } catch (error) {
+    if (!(error instanceof ChatRequestError)) throw error;
+    errorResponse(res, error.message, 400, error.code);
+    return null;
+  }
+}
+
 function getTraceOptions(req, extra = {}) {
   return {
     ...extra,
@@ -126,13 +138,11 @@ const ragChat = async (req, res, next) => {
   const onClientClose = () => abortController.abort();
   res.once('close', onClientClose);
   try {
-    const { message, history, category } = req.body;
+    const parsed = parseChatRequestOrRespond(req, res);
+    if (!parsed) return;
+    const { message, history, category } = parsed;
 
-    if (!message) {
-      return errorResponse(res, '消息内容不能为空', 400);
-    }
-
-    const result = await ragService.chat(message, history || [], getTraceOptions(req, {
+    const result = await ragService.chat(message, history, getTraceOptions(req, {
       category,
       ...getRerankOverrides(req),
       signal: abortController.signal,
@@ -170,17 +180,18 @@ const ragChatStream = async (req, res, next) => {
   let abortController = null;
   let onClientClose = null;
   let streamContext = null;
+  let untrackStream = null;
   const cleanupClientClose = () => {
     if (onClientClose) res.removeListener('close', onClientClose);
+    untrackStream?.();
   };
 
   try {
+    if (isDraining()) return errorResponse(res, SHUTDOWN_MESSAGE, 503, SHUTDOWN_CODE);
     const body = req.body || {};
-    const { message, history, category } = body;
-
-    if (!message) {
-      return res.status(400).json({ error: '消息内容不能为空' });
-    }
+    const parsed = parseChatRequestOrRespond(req, res);
+    if (!parsed) return;
+    const { message, history, category } = parsed;
 
     let fullReply = '';
     const audit = { sources: [], traceId: req.traceId };
@@ -200,6 +211,7 @@ const ragChatStream = async (req, res, next) => {
     abortController = new AbortController();
     onClientClose = () => abortController.abort();
     res.on('close', onClientClose);
+    untrackStream = trackStream({ res, abortController, streamContext });
     const streamOptions = getTraceOptions(req, {
       category,
       ...getRerankOverrides(req),
@@ -207,7 +219,7 @@ const ragChatStream = async (req, res, next) => {
     });
     writeRunStarted(res, streamContext, { conversationId: streamOptions.conversationId });
 
-    for await (const chunk of ragService.chatStream(message, history || [], streamOptions)) {
+    for await (const chunk of ragService.chatStream(message, history, streamOptions)) {
       // 评测审计副作用：在统一写出口之外就地采集（SSE 事件映射本身在 utils/sse-events.js）
       if (chunk.type === 'sources') {
         audit.sources = chunk.sources || [];
@@ -217,6 +229,10 @@ const ragChatStream = async (req, res, next) => {
       if (chunk.type === 'content' && !chunk.done) fullReply += chunk.content || '';
 
       writeStreamEvent(res, chunk, streamContext);
+    }
+    if (res.writableEnded) {
+      cleanupClientClose();
+      return;
     }
 
     writeRunCompleted(res, streamContext);

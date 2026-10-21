@@ -56,6 +56,7 @@ app.use((err, req, res, _next) => {
     : (err.message || '请求处理失败');
   res.status(statusCode).json({
     success: false,
+    message,
     error: message,
     ...(err.code ? { code: err.code } : {}),
     ...(statusCode >= 500 ? {} : { details: err.message }),
@@ -83,6 +84,11 @@ async function startServer() {
   // DocumentService.indexingService 是懒加载，如果没人调用索引方法，
   // registerDocumentProvider 永远不触发，向量为空。这里显式初始化一次，
   // 确保启动后向量库就绪。
+  const { EmbeddingService } = require('./services/knowledge/embedding.service');
+  void new EmbeddingService().warmup().then((loaded) => {
+    if (!loaded) logEvent('error', 'embedding_warmup_failed', { message: '本地 embedding 模型加载失败，/api/ready 将返回 503（READINESS_REQUIRE_EMBEDDING_MODEL=false 可放行）' });
+  });
+
   try {
     const { DocumentService } = require('./services/knowledge/document.service');
     const { vectorStore } = require('./services/knowledge/vector-store-qdrant.service');
@@ -122,21 +128,29 @@ async function shutdown(signal, exitCode = 0) {
   if (isShuttingDown) return;
   isShuttingDown = true;
   logEvent('info', 'server_shutdown_signal', { signal });
+  // 兜底：排空窗口 + 5s 后强制退出（容器 stop_grace_period 需大于该值）
+  const drainTimeoutMs = parseInt(process.env.SHUTDOWN_DRAIN_TIMEOUT_MS, 10) || 25000;
+  setTimeout(() => process.exit(exitCode), drainTimeoutMs + 5000).unref();
   operationalMetrics.flush();
   try { require('./services/conversation/context-compaction.service').stopSpillCleanup(); } catch { /* 清理器未启动时忽略 */ }
   try { require('./services/privacy/retention.service').stopRetentionSweeper(); } catch { /* 清理器未启动时忽略 */ }
   try { require('./services/knowledge/file-upload.service').stopUploadsCleanup(); } catch { /* 清理器未启动时忽略 */ }
   try { require('./services/jobs/job.service').stopJobRunner(); } catch { /* 任务执行器未启动时忽略 */ }
+
+  // 停止接收新连接后排空进行中的 SSE 流；流内仍会读写数据库，存储必须在排空之后再关闭
+  const serverClosed = new Promise((resolve) => (server ? server.close(() => resolve()) : resolve()));
+  const { drainStreams } = require('./utils/stream-registry');
+  const drained = await drainStreams({ timeoutMs: exitCode === 0 ? drainTimeoutMs : 0 });
+  logEvent('info', 'server_streams_drained', drained);
+  server?.closeIdleConnections?.();
+
   try { await require('./services/jobs/job.service').closeJobStore(); } catch { /* 任务数据库未打开时忽略 */ }
   try { await closePostgres(); } catch { /* PostgreSQL 未启用或尚未连接时忽略 */ }
   await shutdownTracing();
-  server?.close(() => {
-    operationalMetrics.close();
-    logEvent('info', 'http_server_closed', { message: 'HTTP server 已关闭' });
-    process.exit(exitCode);
-  });
-  // 兜底：5s 后强制退出
-  setTimeout(() => process.exit(exitCode), 5000).unref();
+  await serverClosed;
+  operationalMetrics.close();
+  logEvent('info', 'http_server_closed', { message: 'HTTP server 已关闭' });
+  process.exit(exitCode);
 }
 
 if (!process.env.VITEST) {

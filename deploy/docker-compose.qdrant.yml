@@ -66,6 +66,8 @@ services:
       - ./ragdata:/app/ragdata:ro
       - ./.model-cache:/app/.model-cache:ro
     restart: unless-stopped
+    # 停机时排空进行中的 SSE 流（SHUTDOWN_DRAIN_TIMEOUT_MS 默认 25s + 5s 收尾）
+    stop_grace_period: 35s
     logging:
       driver: "json-file"
       options:

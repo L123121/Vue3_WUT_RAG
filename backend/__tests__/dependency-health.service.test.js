@@ -1,8 +1,33 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-const { getDependencyHealth } = require('../src/services/observability/dependency-health.service');
+const { getDependencyHealth, normalizeEmbeddingHealth } = require('../src/services/observability/dependency-health.service');
 
 describe('dependency-health.service', () => {
+  it('embedding 模型加载中报 starting，加载失败默认让就绪探针失败', () => {
+    expect(normalizeEmbeddingHealth({ status: 'ok', modelState: 'idle' }).status).toBe('ready');
+    expect(normalizeEmbeddingHealth({ status: 'ok', modelState: 'loading' }).status).toBe('starting');
+    expect(normalizeEmbeddingHealth({ status: 'degraded', modelState: 'failed' }).status).toBe('unavailable');
+
+    vi.stubEnv('READINESS_REQUIRE_EMBEDDING_MODEL', 'false');
+    try {
+      expect(normalizeEmbeddingHealth({ status: 'degraded', modelState: 'failed' }).status).toBe('degraded');
+    } finally {
+      vi.unstubAllEnvs();
+    }
+
+    const health = getDependencyHealth({
+      sqlite: { status: 'ready' },
+      qdrant: { status: 'ready' },
+      embedding: normalizeEmbeddingHealth({ status: 'degraded', modelState: 'failed' }),
+      reranker: { status: 'ready' },
+      uploads: { status: 'ready' },
+      llm: { status: 'ready' },
+      redis: { status: 'disabled', enabled: false },
+      storage: { status: 'ready', backend: 'local' },
+    });
+    expect(health).toMatchObject({ status: 'unavailable', ready: false });
+  });
+
   it('核心依赖正常时返回 ready', () => {
     const health = getDependencyHealth({
       sqlite: { status: 'ready' },

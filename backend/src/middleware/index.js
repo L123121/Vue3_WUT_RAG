@@ -7,6 +7,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
+const { sharedStoreOption } = require('./rate-limit-store');
 const { createTraceId, logEvent, sanitizeTraceId } = require('../services/observability/observability.service');
 const { operationalMetrics } = require('../services/observability/operational-metrics.service');
 const { withHttpRootSpan } = require('../services/observability/otel-tracing.service');
@@ -108,9 +109,10 @@ function applyMiddleware(app) {
 
   // 聊天接口速率限制
   const chatLimiter = rateLimit({
+    ...sharedStoreOption('chat'),
     windowMs: 1 * 60 * 1000,
     max: 60,
-    message: { success: false, error: '请求过于频繁，请稍后再试' },
+    message: { success: false, code: 'RATE_LIMIT', message: '请求过于频繁，请稍后再试', error: '请求过于频繁，请稍后再试' },
     standardHeaders: true,
     legacyHeaders: false,
   });

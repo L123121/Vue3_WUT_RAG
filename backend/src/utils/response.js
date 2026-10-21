@@ -7,10 +7,12 @@ const successResponse = (res, data, message = 'Success') => {
   });
 };
 
-const errorResponse = (res, message = 'Error', statusCode = 500) => {
+const errorResponse = (res, message = 'Error', statusCode = 500, code) => {
   return res.status(statusCode).json({
     success: false,
+    ...(code ? { code } : {}),
     message,
+    error: message,
     ...(res.locals?.traceId ? { traceId: res.locals.traceId } : {}),
   });
 };

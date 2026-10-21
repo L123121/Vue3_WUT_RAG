@@ -1,5 +1,7 @@
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const config = require('../config');
+const { tokenRevocationStore } = require('../services/auth/token-revocation.service');
 
 const COOKIE_NAME = 'auth_token';
 
@@ -20,6 +22,8 @@ const authMiddleware = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, config.jwt.secret);
+    if (tokenRevocationStore.isRevoked(decoded)) throw new Error('token revoked');
+    req.tokenClaims = decoded;
     req.userId = decoded.userId || decoded.id || null;
     req.username = decoded.username || null;
     req.role = decoded.role || null;
@@ -54,6 +58,7 @@ const requireAuth = (req, res, next) => {
 const generateToken = (payload) => {
   return jwt.sign(payload, config.jwt.secret, {
     expiresIn: config.jwt.expiresIn,
+    jwtid: crypto.randomUUID(),
   });
 };
 

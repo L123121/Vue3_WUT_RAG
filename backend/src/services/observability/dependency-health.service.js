@@ -36,12 +36,14 @@ function checkDirectory(directory = UPLOAD_DIR) {
   }
 }
 
-function normalizeEmbeddingHealth() {
-  const health = getEmbeddingHealth();
-  return {
-    status: health.status === 'degraded' ? 'degraded' : 'ready',
-    ...health,
-  };
+function normalizeEmbeddingHealth(health = getEmbeddingHealth()) {
+  // 模型缺失时 n-gram 降级仍能出向量，但检索质量已塌（round-22 事故）；
+  // 默认让就绪探针失败，部署脚本与 healthcheck 才会拦住而不是静默上线。
+  const requireModel = process.env.READINESS_REQUIRE_EMBEDDING_MODEL !== 'false';
+  let status = health.status === 'degraded' ? 'degraded' : 'ready';
+  if (health.modelState === 'loading') status = 'starting';
+  if (health.modelState === 'failed' && requireModel) status = 'unavailable';
+  return { ...health, status };
 }
 
 function normalizeVectorHealth(vectorStore) {
@@ -99,6 +101,7 @@ module.exports = {
   UPLOAD_DIR,
   checkSqlite,
   checkDirectory,
+  normalizeEmbeddingHealth,
   getDependencyHealth,
   getDependencyHealthAsync,
 };

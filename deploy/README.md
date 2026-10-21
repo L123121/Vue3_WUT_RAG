@@ -90,6 +90,13 @@ vim deploy/.env.production
 
 第二阶段 Compose 会同时启动 `backend`、`worker`、`redis`：API 容器只处理 HTTP/SSE，Worker 容器执行 Job 和调度清理任务。Redis 用于跨实例任务通知和短租约，SQLite 仍是 Job 的事实来源；若本地直接运行且未设置 `REDIS_URL`，系统会保持第一阶段的单机兼容模式。
 
+扩容到多个 `backend` 实例前需注意各项状态的作用域：
+- **请求限流**（聊天 / 上传 / 登录 / 注册）：配置 `REDIS_URL` 后计数存于 Redis，多实例共享同一额度；Redis 故障时各实例退回本地内存计数（每实例各自限流，不会放开也不会误拦）。
+- **LLM 并发 `LLM_CONCURRENCY`**：按实例计算，总并发 = 该值 × 实例数，扩容时需按上游 API 限额相应调小。
+- **检索缓存 / 语义缓存**：进程内缓存，实例间不共享，仅影响命中率不影响正确性。
+- **登录撤销表**（logout / 改密码使旧 token 失效）：存于 SQLite，多实例需共享同一数据卷或改造为 PostgreSQL/Redis 存储。
+- **停机排空**：收到 SIGTERM 后拒绝新流、等待进行中的 SSE 流最长 `SHUTDOWN_DRAIN_TIMEOUT_MS`（默认 25s），超时的流会收到 `SERVER_SHUTTING_DOWN` 终止事件；Compose 中 `stop_grace_period` 已设为 35s，修改排空时长时需同步调整。
+
 附件和 Agent 工件使用私有对象存储接口。默认 `OBJECT_STORAGE_BACKEND=local`，对象保存在 `backend-data` volume 的 `objects/` 下；切换 `OBJECT_STORAGE_BACKEND=s3` 后可配置 MinIO、AWS S3 或兼容 SigV4 的对象存储。无论底层实现如何，浏览器始终通过后端的用户/会话归属校验读取对象，不能得到公开对象 URL。
 
 第三阶段 PostgreSQL 采用并存迁移：先设置 `DATABASE_URL`，执行 `npm --prefix backend run db:postgres:migrate` 创建 schema，再执行 `npm --prefix backend run db:sqlite:import-postgres` 导入用户、会话、Job、附件元数据和反馈。核对导入结果后再将 `DATABASE_BACKEND=postgres` 灰度开启；文档与记忆等未迁移 KV 资源仍会继续使用 SQLite。
@@ -157,7 +164,7 @@ curl http://localhost:3000/api/ready
 curl http://localhost:3000/api/health
 ```
 
-`/api/live` 只检查进程存活；`/api/ready` 检查 SQLite、Qdrant、Embedding 等核心依赖是否已就绪，Docker healthcheck 和部署脚本使用 `/api/ready`；`/api/health` 用于查看详细降级状态。
+`/api/live` 只检查进程存活；`/api/ready` 检查 SQLite、Qdrant、Embedding 等核心依赖是否已就绪，Docker healthcheck 和部署脚本使用 `/api/ready`。启动时会预加载本地 embedding 模型，加载期间 `/api/ready` 返回 503（starting），模型文件缺失时持续返回 503（unavailable），避免部署后检索静默降级为 n-gram；本地开发无模型时可设 `READINESS_REQUIRE_EMBEDDING_MODEL=false` 放行；`/api/health` 用于查看详细降级状态。
 
 浏览器访问：
 

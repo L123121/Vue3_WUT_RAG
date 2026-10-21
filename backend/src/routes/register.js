@@ -3,6 +3,7 @@
  */
 const express = require('express');
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
+const { sharedStoreOption } = require('../middleware/rate-limit-store');
 const path = require('path');
 const config = require('../config');
 const { logEvent } = require('../services/observability/observability.service');
@@ -21,9 +22,10 @@ function applyRoutes(app, chatLimiter) {
 
   const isProduction = process.env.NODE_ENV === 'production';
   const uploadLimiter = rateLimit({
+    ...sharedStoreOption('chat-upload'),
     windowMs: 60 * 60 * 1000,
     max: 30,
-    message: { success: false, code: 'RATE_LIMIT', error: '文件上传过于频繁，请稍后再试' },
+    message: { success: false, code: 'RATE_LIMIT', message: '文件上传过于频繁，请稍后再试', error: '文件上传过于频繁，请稍后再试' },
     standardHeaders: true,
     legacyHeaders: false,
     keyGenerator: (req) => req.userId || ipKeyGenerator(req.ip),

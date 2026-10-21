@@ -12,6 +12,24 @@ function getEmbeddingModule() {
 }
 
 describe('EmbeddingService', () => {
+  it('多个实例共享一次模型加载，失败状态进入健康快照', async () => {
+    const transformersPath = require.resolve('@huggingface/transformers');
+    const original = require.cache[transformersPath];
+    const pipeline = vi.fn().mockRejectedValue(new Error('model files missing'));
+    require.cache[transformersPath] = { id: transformersPath, filename: transformersPath, loaded: true, exports: { env: {}, pipeline } };
+    try {
+      const mod = getEmbeddingModule();
+      expect(mod.getEmbeddingHealth().modelState).toBe('idle');
+      const [a, b] = [new mod.EmbeddingService(), new mod.EmbeddingService()];
+      const results = await Promise.all([a.warmup(), b.warmup()]);
+      expect(results).toEqual([false, false]);
+      expect(pipeline).toHaveBeenCalledTimes(1);
+      expect(mod.getEmbeddingHealth()).toMatchObject({ status: 'degraded', modelState: 'failed', modelLoadError: 'model files missing' });
+    } finally {
+      if (original) require.cache[transformersPath] = original;
+      else delete require.cache[transformersPath];
+    }
+  });
   it('查询 embedding 固定使用本地 BGE-small-zh，不再调用远程 API', async () => {
     const previousModel = process.env.EMBEDDING_MODEL;
     delete process.env.EMBEDDING_MODEL;

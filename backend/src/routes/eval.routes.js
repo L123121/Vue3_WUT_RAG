@@ -9,6 +9,7 @@ const { getFeedbackSummary } = require('../controllers/rag.controller');
 const { saveEvaluation, getEvaluations, compareEvaluations, importEvaluation, getEvaluationPayload, updateEvaluationScores } = require('../services/agent/quality-governance.service');
 const { doubleJudgeStepForRatio, shouldDoubleJudge, computeJudgeAgreement, averageJudgeResults } = require('../services/agent/judge-agreement.service');
 const config = require('../config');
+const { logEvent } = require('../services/observability/observability.service');
 
 const router = Router();
 
@@ -100,6 +101,11 @@ router.post('/run', requireAdmin, async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
 
+  // 管理员关闭页面后停止评测：否则剩余用例仍会逐条占用 LLM 并发槽位与评测配额
+  const abortController = new AbortController();
+  const onClientClose = () => abortController.abort();
+  res.on('close', onClientClose);
+
   const sendLog = (text) => {
     res.write(`data: ${JSON.stringify({ type: 'log', text, timestamp: new Date().toISOString() })}\n\n`);
   };
@@ -125,13 +131,14 @@ router.post('/run', requireAdmin, async (req, res) => {
     const doubleJudgeStats = { sampled: 0, consistent: 0, inconsistent: 0, judgeFailed: 0, diffSum: 0, diffCount: 0 };
 
     for (let i = 0; i < totalCases; i++) {
+      if (abortController.signal.aborted) break;
       const tc = testCases[i];
       sendLog(`🔄 [Eval #${i + 1}/${totalCases}] 问题: ${tc.question.substring(0, 30)}...`);
 
       try {
         // 1. 走 RAG 管道检索并生成回答
         const start = Date.now();
-        const ragResult = await ragService.chat(tc.question, [], { enableRag });
+        const ragResult = await ragService.chat(tc.question, [], { enableRag, signal: abortController.signal });
         const latency = Date.now() - start;
 
         const answer = ragResult.reply || ragResult.answer || '';
@@ -208,6 +215,7 @@ router.post('/run', requireAdmin, async (req, res) => {
                 `recall=${(metrics.context_recall * 100).toFixed(0)}% ` +
                 `(${latency}ms, judge=${judgeResult.model})`);
       } catch (err) {
+        if (abortController.signal.aborted) break;
         sendLog(`❌ [Eval #${i + 1}] 失败: ${err.message}`);
         results.push({
           id: tc.id,
@@ -219,6 +227,12 @@ router.post('/run', requireAdmin, async (req, res) => {
           error: err.message,
         });
       }
+    }
+
+    if (abortController.signal.aborted) {
+      // 中途放弃的评测不入库，避免残缺样本污染回归基线比对
+      logEvent('info', 'eval_run_aborted', { completed: results.length, total: totalCases });
+      return;
     }
 
     // 计算总体平均分
@@ -297,9 +311,12 @@ router.post('/run', requireAdmin, async (req, res) => {
 
     res.end();
   } catch (err) {
+    if (abortController.signal.aborted) return;
     sendLog(`❌ [Eval] 评测管道异常: ${err.message}`);
     res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
     res.end();
+  } finally {
+    res.removeListener('close', onClientClose);
   }
 });
 
