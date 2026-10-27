@@ -178,7 +178,7 @@ chat.store（聚合层）→ 页面统一接口
 - `rag-pipeline.service.js` — RAG 检索管道编排：文档检查 → 多变体检索 → 可靠性判定 → 父段处理（聚合/rerank/截断/MMR/排序/组装）
 - `rag-generation.service.js` — RAG 生成层：非流式/流式 LLM 生成、失败守卫与纯 LLM 降级、grounding/process 卡片/usage/追问收尾
 - `ai.service.js` — LLM 调用 + 请求队列（LLM_CONCURRENCY=3）
-- `ocr.service.js` — 视觉识别（step-1o-turbo-vision）：图片/扫描件 → Markdown，mupdf 渲染 + 页级并发，支持按页 OCR（opts.pages/returnMap，文本型 PDF 表格页重建用）
+- `ocr.service.js` — 视觉识别（Provider 可独立配置，默认 StepFun `step-1o-turbo-vision`，可切 tokenrhythm `qwen3.8-flash`）：图片/扫描件 → Markdown，mupdf 渲染 + 页级并发，支持按页 OCR（opts.pages/returnMap，文本型 PDF 表格页重建用）
 - `judge.service.js` — LLM-as-judge 独立 Key，4 指标合并 1 次请求
 - `prometheus-metrics.service.js` — Prometheus 文本格式渲染（零依赖）：运营计数器 + 有界原始延迟样本现场分桶直方图 + 进程/事件循环自观测，`/api/metrics/prometheus` env 门控 + token 校验，抓取方放外部
 - `otel-tracing.service.js` — OTLP trace 导出（env 门控，`OTEL_EXPORTER_OTLP_ENDPOINT` 设置即启用）：手动埋点三处——middleware HTTP 根 span（http.* 语义属性）、`RagTracer.recordStage` 单点接线全部 RAG 阶段子 span（显式时间戳）、ai.service 非流式/流式 LLM span（gen_ai.* 属性）；关闭时 `@opentelemetry/api` 走 Noop，零依赖加载
@@ -187,6 +187,9 @@ chat.store（聚合层）→ 页面统一接口
 - `agent.service.js` — Agent 工具调度（V2.0）：L2 有界多轮（maxToolRounds=2 + 无进展检测）+ L3 会话记忆摘要 + 工件落盘/按需读取 + L4 agent tracer
 - `agent-tools.js` — Agent 工具注册表：search_knowledge_base + read_tool_artifact（教务工具预注册、默认禁用）
 - `conversation-orchestrator.service.js` — Chat/RAG/Agent 统一编排、持久记忆注入、失败降级与结果保存
+- `jev-decision.service.js` — JEV 结构化决策客户端（NeoHorse-Jev-4B）：路由决策（choice 单题）+ 通用 `decide()`（noul/choice）+ 403 灰度熔断 + Token 口径归一化
+- `routes/decision.routes.js` — `/api/decision`（结构化决策直连）与 `/api/decision/status`（可用性快照）路由与错误码映射
+- `scripts/jev-probe.cjs` — JEV 联调/巡检脚本：模型目录、最小示例、退出码区分「可用 / 未放量 / 其它错误」
 - `tool-registry.service.js` — JSON Schema 参数校验、取消传播、超时闸门与工具元数据
 - `tool-registry.service.js` — 工具注册器（TOOL_SOURCES.BUILTIN，可扩展）
 - `config/index.js` — 集中配置
@@ -460,6 +463,27 @@ chat.store（聚合层）→ 页面统一接口
 - 顺带修复 `eval-agent.cjs`：require 路径停留在服务分目录前（脚本此前无法运行）、未命中兜底误写 rag（生产早已改 chat）；RT19/RT20 标注随之改为 chat
 - Phase 1 路由准确率 20/24：剩余 4 条（RT13 红黑树、RT14 软件工程面试、RT21 深度学习、RT24 转专业）为真实漏判——问题落在 chat 不检索知识库，待评估是否扩充 KNOWLEDGE_PATTERNS
 
+**29. JEV 结构化决策模型接入（NeoHorse-Jev-4B @ tokenrhythm.studio，2026-10-27）**
+
+- 背景：项目原有的 Jev 路由接入指向 `api.typesafe.ai/v1/systemone` + `jev-latest`，但从未配置 Key（`enabled=false` 空转，等价于死代码）。本次换成官方下发的 tokenrhythm 端点与 `NeoHorse-Jev-4B`，并补上通用决策直连接口与灰度熔断
+- 协议实测两个"文档与实现不一致"的点（**只按文档写会直接解析失败**）：
+  - noul 概率字段是 `noul`（不是 `probability`），另有 `probabilities.true/false`；解析器按键名宽容匹配 + `probabilities.true` 回退
+  - `/v1/decision` 的用量在**顶层** `input_tokens` + `input_details`（没有被 `usage` 包裹），`/v1/systemone` 才是 `usage.{input_tokens,output_tokens}` → `extractUsage()` 两处兼容；`normalizeUsage` 严格按文档口径"input_tokens 优先、缺失回退 expanded_tokens、**两者不相加**"，上游未报则标 `unknown` 不臆造 0
+- 路由协议选型（实测 A/B，6 题标注样本）：放弃"每路由一个 noul 取 argmax"（4/6，"推免保研需要准备哪些材料"被判 chat **0.967**、"图书馆几点开门"判 chat 0.873），改回**单个 choice + criteria**（argmax **6/6**，分布分明 chat 0.99 / rag 0.63~0.98 / agent 0.54；其中 1 题 0.536 低于 `minConfidence=0.55` 被拒后回落基线仍正确）；noul 多问形态保留为解析兼容路径（`normalizeRouteAnswer` 两路都认）。结论与数据记入 `docs/jev-decision.md`
+- 灰度熔断（当天真实踩到）：同一 Key 早上调两个端点均 403 `MODEL_ACCESS_DENIED`，几分钟后放量返回 200。处理为独立错误码 + **不重试**（403 重试无意义）+ 冷却 5 分钟（`JEV_DECISION_UNAVAILABLE_COOLDOWN_MS`）：期间 `shouldEvaluate()` 直接 false，编排层静默回退基线路由，不再逐条打上游；`/api/decision` 回 503 + `Retry-After`；冷却结束自动重试，放量后无需重启。首次命中只记一条 `jev_model_access_denied` 警告
+- 新增直连接口：`POST /api/decision`（state + questions → answers + usage，requireAuth + 30 次/分/用户限流 + 每日配额）与 `GET /api/decision/status`（无密钥可用性快照）。入参校验（state ≤8000 字符、questions ≤8、type 限 `noul`/`choice`、问题 ID 字符白名单、`criteria` 校验）全部在 service 层，路由层只做错误码映射（400 / 499 / 502 / 503 / 504）；`/api/health` 增加 `decision_model` 快照
+- 实测（`decideRoute` 打真实端点）：5/6 直接命中 + 1 题置信度 0.536 被 `minConfidence=0.55` 拒绝后基线仍正确；单次 232–732ms（冷启动 732ms），input_tokens 82–90
+  - ⚠️ 延迟口径：`enforce` 会把这段延迟串在首包之前（生产 SSE 首包约 130ms），故 `backend/.env` 默认 `JEV_DECISION_MODE=shadow`（后台比对、不阻塞、不改变路由），核对 `jev_shadow_decision` 的 `agreement` 后再切 `enforce`/`canary`
+- 巡检：`node backend/scripts/jev-probe.cjs`（退出码 0 可用 / 2 未放量 / 3 无 Key），同时输出模型目录是否上架（`NeoHorse-Jev-4B` 不在 `/v1/models` 属正常，以 `/v1/decision` 实际返回为准）
+- 测试：`jev-decision.service.test.js`(20：choice/noul 双协议、真实字段名、用量口径、403 熔断与冷却恢复、参数边界)、`decision.routes.test.js`(7：成功透传、503+Retry-After、400 具体原因/502/504、中止、错误码映射)；后端全量 706 用例通过，`lint:check` 清零
+
+**30. OCR 中文请求截断修复 + 视觉模型切 tokenrhythm（2026-10-27）**
+
+- 🐞 真 Bug（非本轮引入）：`ocr.service` 把 `body.length`（UTF-16 码元）当 `Content-Length`，中文提示词 UTF-8 字节更多 → 请求体截断 → 上游 `400 Body is not valid JSON`；`ai.service`/`judge.service` 都用 `Buffer.byteLength`，只有 OCR 漏了（StepFun 上同样坏）
+- 修复：改 `Buffer.byteLength(body,'utf8')` + 3 条回归断言；配套 `OCR_BASE_URL`/`OCR_API_KEY`/`JUDGE_BASE_URL`（留空回退 `ai.*`）解耦 Provider，`/api/health` 的 provider 改由 baseUrl 推导
+- 实测：中文课程表截图经 `qwen3.8-flash` 2.4s 还原完整 GFM 表格；测试 `ocr.service.test.js` 4 → 6，后端全量 **706** 通过、`lint:check` 清零
+
+
 ### ❌ 尝试但退回
 
 **BM25 Function（2025-07-14）**
@@ -614,6 +638,13 @@ OTEL_TRACING_ENABLED=true        # 保留端点变量时显式关闭用 false
 # Qdrant 调优
 QDRANT_PAYLOAD_INDEX=true        # docId/category 关键词索引（幂等）
 QDRANT_QUANTIZATION=             # 置 int8 开启标量量化（存量 collection 需重建后全量生效）
+
+# Provider 解耦（2026-10-27）：OCR / judge / TTS 可各自绑定，留空回退 AI_BASE_URL / AI_API_KEY
+JUDGE_BASE_URL=https://api.stepfun.com/step_plan/v1
+OCR_BASE_URL=https://tokenrhythm.studio/v1
+OCR_API_KEY=...
+STEPFUN_API_KEY=...
+STEPFUN_AUDIO_BASE_URL=https://api.stepfun.com/step_plan/v1
 
 # OCR / 视觉识别（扫描件 PDF 与图片表格，走 step-1o-turbo-vision，复用 AI_API_KEY）
 OCR_ENABLED=true

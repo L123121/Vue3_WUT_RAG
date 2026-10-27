@@ -19,6 +19,8 @@ function applyRoutes(app, chatLimiter) {
   const { requireAuth } = require('../middleware/auth.middleware');
   const { router: authRoutes } = require('./auth.routes');
   const { router: metricsRoutes } = require('./metrics.routes');
+  const { createDecisionRouter } = require('./decision.routes');
+  const { getApplicationContainer } = require('../bootstrap/container');
 
   const isProduction = process.env.NODE_ENV === 'production';
   const uploadLimiter = rateLimit({
@@ -46,16 +48,24 @@ function applyRoutes(app, chatLimiter) {
   app.get('/api/health', async (req, res) => {
     const health = await getDependencyHealthAsync();
     const hasApiConfig = !!config.ai.apiKey;
+    const decisionModel = getApplicationContainer().decisionModel;
+    // Provider 由 baseUrl 推导：主模型可切供应商（StepFun / tokenrhythm 等），不要写死厂商名
+    let aiProvider = 'unknown';
+    try {
+      aiProvider = new URL(config.ai.baseUrl || '').host || 'unknown';
+    } catch { /* 非法 URL 时保持 unknown */ }
     res.status(health.status === 'unavailable' ? 503 : 200).json({
       ...health,
       status: health.status,
       message: health.status === 'ready' ? '武理小精灵后端服务运行正常' : '武理小精灵后端服务处于降级状态',
       ai_service: {
         enabled: hasApiConfig,
-        provider: 'StepFun (阶跃星辰)',
+        provider: aiProvider,
         model: config.ai.model || config.DEFAULT_AI_MODEL,
         status: hasApiConfig ? '配置正常' : '模拟模式',
       },
+      // JEV 结构化决策模型：只暴露无密钥快照，灰度未放量时 available=false
+      decision_model: decisionModel?.getAvailability?.() || { provider: 'jev', available: false, status: 'disabled' },
       storage: 'sqlite',
       retrieval: { embedding: getEmbeddingHealth() },
     });
@@ -80,6 +90,9 @@ function applyRoutes(app, chatLimiter) {
   // 直连 RAG 也属于高成本聊天入口，与 /api/stream 共用请求级限流。
   app.use('/api/rag/chat', chatLimiter);
   app.use('/api', apiRoutes);
+
+  // JEV 结构化决策直连接口（/api/decision）：鉴权 + 独立用户级限流在 router 内部
+  app.use('/api/decision', createDecisionRouter(getApplicationContainer().decisionModel));
 
   // SSE 流式聊天
   app.post('/api/stream', chatLimiter, streamHandler);

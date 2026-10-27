@@ -14,6 +14,7 @@
 
 - **流式 AI 对话**：基于 Fetch、ReadableStream 和 SSE 增量渲染回答；生产实测 SSE 首包（retrieval 事件）约 130ms。
 - **自动意图路由**：后端自动决定进入 `chat`、`rag` 或 `agent`，前端无需手动切换 RAG。
+- **结构化决策模型**：接入 JEV `NeoHorse-Jev-4B`，在 `shadow` / `canary` / `enforce` 三档下参与路由决策；同时通过 `POST /api/decision` 对外提供通用结构化决策（`state` + `questions`，支持 `noul` 概率与 `choice` 单选），详见 [docs/jev-decision.md](docs/jev-decision.md)。
 - **RAG 知识库**：支持文档上传、批量录入、两级分类、统计、重索引、来源引用和反馈。
 - **校园百科**：知识库文档的上架阅读视图（`/wiki`），默认不上架、管理员逐条放开，演示用虚构语料按治理规则禁止上架；分类树、目录锚点、标题与正文搜索、可读 slug 链接，并与对话来源引用双向跳转。
 - **Agent 工具调用**：内置知识库检索 `search_knowledge_base` 与受控工件读取 `read_tool_artifact`；大结果可按需读取。
@@ -148,7 +149,9 @@ docId 由 `backend/src/utils/doc-id.js` 从 **(标题, 类别)** 确定性派生
 | --- | --- | --- |
 | `GET` | `/api/live` | 进程存活检查，不依赖外部服务 |
 | `GET` | `/api/ready` | 依赖就绪检查，供 Docker/部署探针使用 |
-| `GET` | `/api/health` | 详细依赖健康快照，包含 SQLite、Qdrant、Embedding、Reranker、LLM 和上传目录状态 |
+| `GET` | `/api/health` | 详细依赖健康快照，包含 SQLite、Qdrant、Embedding、Reranker、LLM、决策模型和上传目录状态 |
+| `POST` | `/api/decision` | 登录用户调用 JEV 结构化决策模型（`state` + `questions`），返回逐问题答案与 Token 用量 |
+| `GET` | `/api/decision/status` | 决策模型可用性快照（不含密钥）；灰度未放量时 `available=false` 并带冷却剩余时间 |
 | `POST` | `/api/stream` | 主 SSE 会话接口 |
 | `POST` | `/api/chat/upload` | 登录用户上传私有聊天附件，返回带用户/会话归属的 `attachmentId` |
 | `GET` | `/api/chat/attachments/:attachmentId` | 当前用户受控读取私有附件 |
@@ -297,8 +300,14 @@ RAG 与 Agent 评测脚本位于 `scripts/rag-eval/`，主要数据集位于 `sc
 | `AGENT_DECIDE_TIMEOUT_MS` | `15000` | Agent 决策超时 |
 | `AGENT_TOOL_TIMEOUT_MS` | `15000` | Agent 工具执行总超时 |
 | `AGENTIC_RAG_ENABLED` | `true` | 受控 Agentic RAG（检索-重写循环）；失败自动回落纯 RAG，`false` 一键回退 |
-| `JEV_DECISION_ENABLED` | `true` | Jev System One 决策路由总开关 |
+| `JEV_API_KEY` | 空 | JEV 平台 Key（也接受 `TOKENRHYTHM_API_KEY`）；未配置时决策层空转，直接走基线路由 |
+| `JEV_DECISION_ENABLED` | `true` | JEV 结构化决策总开关 |
 | `JEV_DECISION_MODE` | `enforce` | `enforce` 决策覆盖路由 / `canary` 按比例放量 / `shadow` 只记录分歧 / `off` 关闭；未配置 `JEV_API_KEY` 时自动空转回退基线路由 |
+| `JEV_DECISION_ENDPOINT` | `https://tokenrhythm.studio/v1/decision` | 决策端点，可切同域 `/v1/systemone` 兼容格式 |
+| `JEV_DECISION_MODEL` | `NeoHorse-Jev-4B` | 决策模型 ID（固定） |
+| `JEV_DECISION_MIN_CONFIDENCE` | `0.55` | 低于阈值的路由决策回落基线（实测分布偏软，可下调到 `0.5`） |
+| `JEV_DECISION_UNAVAILABLE_COOLDOWN_MS` | `300000` | 命中 403 灰度限制后的冷却时长，期间不再请求上游 |
+| `JEV_DECISION_MAX_STATE_CHARS` | `8000` | `/api/decision` 的 `state` 长度上限 |
 
 ### RAG 与模型
 
@@ -337,8 +346,11 @@ RAG 与 Agent 评测脚本位于 `scripts/rag-eval/`，主要数据集位于 `sc
 | `AI_ENABLE_THINKING` | `false` | 是否开启模型思考模式 |
 | `JUDGE_API_KEY` | `AI_API_KEY` | LLM-as-judge 独立 Key |
 | `JUDGE_MODEL` | `step-3.5-flash` | Judge 模型 |
+| `JUDGE_BASE_URL` | `AI_BASE_URL` | Judge 独立端点；主模型换供应商时用于保持评测模型绑定原 Provider |
 | `OCR_ENABLED` | `true` | 图片与扫描 PDF OCR |
-| `OCR_MODEL` | `step-1o-turbo-vision` | OCR 视觉模型 |
+| `OCR_MODEL` | `step-1o-turbo-vision` | OCR 视觉模型；须支持 OpenAI 兼容 `image_url`（如 tokenrhythm 的 `qwen3.8-flash`） |
+| `OCR_BASE_URL` | `AI_BASE_URL` | OCR 独立端点；主聊天模型换供应商时避免视觉模型跟着失效 |
+| `OCR_API_KEY` | `AI_API_KEY` | OCR 独立 Key，与 `OCR_BASE_URL` 配套使用 |
 | `AUTH_INVITE_CODE` | 空 | 注册邀请码；为空时不要求邀请码，配置后注册必须携带正确邀请码 |
 | `RUN_EVENT_LOG_RETENTION_DAYS` | `30` | RunEvent 回放日志留存天数，到期自动清理；`0` 表示不限 |
 | `SHARE_SNAPSHOT_RETENTION_DAYS` | `0` | 分享快照留存天数，到期自动清理；`0` 表示不自动删除 |

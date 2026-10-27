@@ -26,6 +26,10 @@ class OcrService {
     this.detail = config.ocr.detail;
     this.maxPages = config.ocr.maxPages;
     this.concurrency = config.ocr.concurrency;
+    // 视觉模型可独立指定 Provider：切换聊天主模型（AI_BASE_URL/AI_MODEL）时，
+    // StepFun 视觉模型不会因为聊天 Provider 换人而失效；未配置时回退到 ai.*
+    this.baseUrl = config.ocr.baseUrl || config.ai.baseUrl || 'https://api.stepfun.com/v1';
+    this.apiKey = config.ocr.apiKey || config.ai.apiKey;
     this._mupdfPromise = null; // 懒加载 mupdf
   }
 
@@ -54,8 +58,8 @@ class OcrService {
     if (!this.enabled) {
       throw new Error('OCR 未启用（OCR_ENABLED=false）');
     }
-    if (!config.ai.apiKey) {
-      throw new Error('OCR 需要 AI_API_KEY');
+    if (!this.apiKey) {
+      throw new Error('OCR 需要 AI_API_KEY 或 OCR_API_KEY');
     }
 
     const detail = opts.detail || this.detail;
@@ -87,7 +91,9 @@ class OcrService {
       stream: false,
     });
 
-    const options = this._buildOptions('/v2/chat/completions', body.length, opts.timeout);
+    // ⚠️ Content-Length 必须按 UTF-8 字节数计算：中文提示词按字符数（body.length）会少算，
+    // 服务端只读到前 N 字节 → "Body is not valid JSON"。与 ai.service / judge.service 口径一致。
+    const options = this._buildOptions('/v2/chat/completions', Buffer.byteLength(body, 'utf8'), opts.timeout);
     const start = Date.now();
     const result = await request(options, body);
     const content = result.data?.choices?.[0]?.message?.content || '';
@@ -176,7 +182,7 @@ class OcrService {
    * 构建 OpenAI 兼容请求选项（与 ai.service 同构，复用共享 httpClient）
    */
   _buildOptions(path, bodyLength, timeout) {
-    const baseUrl = config.ai.baseUrl || 'https://api.stepfun.com/v1';
+    const baseUrl = this.baseUrl;
     // baseUrl 已含 /v1 时，剥离路径中的版本号前缀（与 ai.service._buildOptions 一致）
     let finalPath = path;
     const baseHasVersion = baseUrl.match(/\/v\d+$/);
@@ -191,7 +197,7 @@ class OcrService {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
-        'Authorization': `Bearer ${config.ai.apiKey}`,
+        'Authorization': `Bearer ${this.apiKey}`,
         'Content-Length': bodyLength,
       },
       timeout: timeout || 90000,

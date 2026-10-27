@@ -7,6 +7,9 @@ const jevEnabled = process.env.JEV_DECISION_ENABLED !== 'false';
 const jevMode = process.env.JEV_DECISION_MODE || (jevEnabled ? 'enforce' : 'off');
 const jevRolloutEnv = Number.parseFloat(process.env.JEV_DECISION_ROLLOUT_PERCENT);
 const jevMaxRetriesEnv = Number.parseInt(process.env.JEV_DECISION_MAX_RETRIES, 10);
+const jevMaxStateCharsEnv = Number.parseInt(process.env.JEV_DECISION_MAX_STATE_CHARS, 10);
+const jevMaxQuestionsEnv = Number.parseInt(process.env.JEV_DECISION_MAX_QUESTIONS, 10);
+const jevCooldownEnv = Number.parseInt(process.env.JEV_DECISION_UNAVAILABLE_COOLDOWN_MS, 10);
 
 if (!process.env.VITEST) {
   const requiredEnv = ['AI_API_KEY', 'JWT_SECRET'];
@@ -66,7 +69,8 @@ module.exports = {
   // LLM-as-judge 评测专用（独立 Key，不跟生产抢配额）
   judge: {
     apiKey: process.env.JUDGE_API_KEY || process.env.AI_API_KEY,
-    baseUrl: process.env.AI_BASE_URL || 'https://api.stepfun.com/v1',
+    // 评测模型可独立指定 Provider：主模型换供应商时 judge 不必跟着换
+    baseUrl: process.env.JUDGE_BASE_URL || process.env.AI_BASE_URL || 'https://api.stepfun.com/v1',
     model: process.env.JUDGE_MODEL || 'step-3.5-flash',
     maxTokens: 256,
     temperature: 0,
@@ -80,6 +84,10 @@ module.exports = {
     model: process.env.OCR_MODEL || 'step-1o-turbo-vision',
     // detail=low ~169 token/图（默认）；表格等细节场景可切 high（按图大小计费）
     detail: process.env.OCR_DETAIL || 'low',
+    // 视觉模型可独立指定 Provider：聊天主模型切换（AI_BASE_URL/AI_MODEL）不影响 OCR。
+    // 留空则回退 ai.baseUrl / ai.apiKey（保持旧行为）。
+    baseUrl: process.env.OCR_BASE_URL || '',
+    apiKey: process.env.OCR_API_KEY || '',
     maxPages: parseInt(process.env.OCR_MAX_PAGES, 10) || 30,
     // 页级识别并发上限（成本与限流闸门）
     concurrency: parseInt(process.env.OCR_CONCURRENCY, 10) || 2,
@@ -239,15 +247,17 @@ module.exports = {
     wikiFirstHybridEnabled: process.env.RAG_WIKI_HYBRID_ENABLED !== 'false',
     wikiFirstMaxEntries: Math.min(Math.max(parseInt(process.env.RAG_WIKI_FIRST_MAX_ENTRIES, 10) || 3, 1), 10),
   },
-  // Jev System One 决策层：默认 enforce（已扶正）；未配置 JEV_API_KEY 时编排层静默回退基线路由。
-  // shadow 只记录分歧，canary 按百分比放量，off 关闭
+  // Jev 结构化决策层（NeoHorse-Jev-4B @ tokenrhythm.studio）：默认 enforce；
+  // 未配置 JEV_API_KEY 时编排层静默回退基线路由。shadow 只记录分歧，canary 按百分比放量，off 关闭。
+  // 模型可能仅对灰度账号开放（403 MODEL_ACCESS_DENIED）：命中后按 unavailableCooldownMs 冷却，
+  // 期间不逐条请求上游，冷却结束自动重试（放量后无需重启）。
   jev: {
     enabled: jevEnabled,
     mode: jevMode,
-    apiKey: process.env.JEV_API_KEY || process.env.TYPESAFE_API_KEY || '',
-    endpoint: process.env.JEV_DECISION_ENDPOINT || 'https://api.typesafe.ai/v1/systemone',
-    model: process.env.JEV_DECISION_MODEL || 'jev-latest',
-    timeoutMs: parseInt(process.env.JEV_DECISION_TIMEOUT_MS, 10) || 1200,
+    apiKey: process.env.JEV_API_KEY || process.env.TOKENRHYTHM_API_KEY || process.env.TYPESAFE_API_KEY || '',
+    endpoint: process.env.JEV_DECISION_ENDPOINT || 'https://tokenrhythm.studio/v1/decision',
+    model: process.env.JEV_DECISION_MODEL || 'NeoHorse-Jev-4B',
+    timeoutMs: parseInt(process.env.JEV_DECISION_TIMEOUT_MS, 10) || 1500,
     maxRetries: Number.isFinite(jevMaxRetriesEnv)
       ? Math.min(Math.max(jevMaxRetriesEnv, 0), 2)
       : 1,
@@ -260,6 +270,17 @@ module.exports = {
     maxHistoryItems: parseInt(process.env.JEV_DECISION_MAX_HISTORY_ITEMS, 10) || 4,
     maxHistoryChars: parseInt(process.env.JEV_DECISION_MAX_HISTORY_CHARS, 10) || 1200,
     policyVersion: process.env.JEV_DECISION_POLICY_VERSION || 'route-v1',
+    // /api/decision 直连入参上限（与路由无关，防超长 state 撑爆计费）
+    maxStateChars: Number.isFinite(jevMaxStateCharsEnv)
+      ? Math.min(Math.max(jevMaxStateCharsEnv, 100), 50000)
+      : 8000,
+    maxQuestions: Number.isFinite(jevMaxQuestionsEnv)
+      ? Math.min(Math.max(jevMaxQuestionsEnv, 1), 20)
+      : 8,
+    maxInstructionsChars: parseInt(process.env.JEV_DECISION_MAX_INSTRUCTIONS_CHARS, 10) || 2000,
+    unavailableCooldownMs: Number.isFinite(jevCooldownEnv)
+      ? Math.min(Math.max(jevCooldownEnv, 0), 3600000)
+      : 300000,
   },
   // 轻量 Agent 工具调度（V2.0）：默认启用；AGENT_TOOL_ENABLED=false 可一键回退 RAG
   agent: {

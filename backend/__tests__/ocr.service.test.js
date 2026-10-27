@@ -60,4 +60,51 @@ describe('OcrService 降级路径', () => {
     OcrService = await loadOcrService();
     expect(new OcrService().detail).toBe('high');
   });
+
+  it('Content-Length 按 UTF-8 字节数计算（中文提示词不被截断）', async () => {
+    // 回归：曾用 body.length（UTF-16 码元）当 Content-Length，中文提示词比字节数短，
+    // 请求体被截断 → 上游报 "Body is not valid JSON"，OCR 图片识别全部失败。
+    const httpClient = require('../src/utils/httpClient');
+    const originalRequest = httpClient.request;
+    let captured = null;
+    httpClient.request = async (options, body) => {
+      captured = { options, body };
+      return { data: { choices: [{ message: { content: '## ok' } }] } };
+    };
+
+    try {
+      vi.stubEnv('OCR_ENABLED', 'true');
+      vi.stubEnv('AI_API_KEY', 'test-key');
+      vi.stubEnv('OCR_BASE_URL', 'https://vision.test/v1');
+      const OcrService = await loadOcrService();
+      const svc = new OcrService();
+      await expect(svc.recognizeImage(Buffer.from('x'), 'image/png')).resolves.toBe('## ok');
+    } finally {
+      httpClient.request = originalRequest;
+    }
+
+    const byteLength = Buffer.byteLength(captured.body, 'utf8');
+    expect(captured.options.headers['Content-Length']).toBe(byteLength);
+    // 中文提示词：字节数必须大于字符数，否则说明又退回按字符计数
+    expect(byteLength).toBeGreaterThan(captured.body.length);
+    // 端点版本前缀只保留一份（/v1 + /chat/completions）
+    expect(captured.options.path).toBe('/v1/chat/completions');
+  });
+
+  it('OCR 可独立指定 Provider，未配置时回退 ai.*', async () => {
+    vi.stubEnv('OCR_ENABLED', 'true');
+    vi.stubEnv('AI_API_KEY', 'test-key');
+    vi.stubEnv('AI_BASE_URL', 'https://chat.test/v1');
+    vi.stubEnv('OCR_BASE_URL', '');
+    vi.stubEnv('OCR_API_KEY', '');
+    let OcrService = await loadOcrService();
+    expect(new OcrService().baseUrl).toBe('https://chat.test/v1');
+
+    vi.stubEnv('OCR_BASE_URL', 'https://vision.test/v1');
+    vi.stubEnv('OCR_API_KEY', 'vision-key');
+    OcrService = await loadOcrService();
+    const svc = new OcrService();
+    expect(svc.baseUrl).toBe('https://vision.test/v1');
+    expect(svc.apiKey).toBe('vision-key');
+  });
 });

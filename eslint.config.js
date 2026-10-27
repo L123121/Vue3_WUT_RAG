@@ -132,6 +132,21 @@ export default [
     },
   },
   {
+    // backend/scripts/ 同为 CLI 脚本（联调探针、数据迁移）：console 是产品输出
+    files: ['backend/scripts/**/*.cjs', 'backend/scripts/**/*.js'],
+    languageOptions: {
+      globals: {
+        ...nodeGlobals,
+        AbortSignal: 'readonly',
+        Blob: 'readonly',
+        FormData: 'readonly',
+      },
+    },
+    rules: {
+      'no-console': 'off',
+    },
+  },
+  {
     ignores: ['dist/**', 'node_modules/**', 'backend/node_modules/**', '.claude/**'],
   },
 ];
