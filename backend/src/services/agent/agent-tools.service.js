@@ -163,4 +163,14 @@ function getToolNames() {
   return toolRegistry.getToolNames();
 }
 
-module.exports = { toolRegistry, getToolSchemas, executeTool, executeToolDetailed, getToolNames };
+/**
+ * 工具执行元信息：Agent 调度据此决定并行还是串行（副作用工具同轮内不可并发）。
+ * 未知工具按"可并行、无副作用"处理，由执行层给出未知工具错误。
+ */
+function getToolMeta(name) {
+  const tool = toolRegistry.getTool(name);
+  if (!tool) return { parallelSafe: true, sideEffect: false };
+  return { parallelSafe: tool.parallelSafe !== false, sideEffect: tool.sideEffect === true };
+}
+
+module.exports = { toolRegistry, getToolSchemas, executeTool, executeToolDetailed, getToolNames, getToolMeta };

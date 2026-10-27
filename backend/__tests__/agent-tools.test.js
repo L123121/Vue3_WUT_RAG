@@ -485,8 +485,140 @@ describe('AgentService（单轮工具调度，原生 function calling）', () =>
     expect(types).toContain('tool_result');
     expect(types).toContain('trace');
     const trace = events.find(e => e.type === 'trace');
-    expect(trace.trace.finishReason).toBe('direct_answer');
+    expect(trace.trace.finishReason).toBe('tool_assisted');
     expect(trace.trace.toolCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('chatStream：同轮重复工具调用只执行一次（去重，assistant 消息同步收敛）', async () => {
+    let executions = 0;
+    agentTools.toolRegistry.register({
+      name: 'test_count',
+      description: '计数工具',
+      timeoutMs: 1000,
+      parameters: {
+        type: 'object',
+        properties: { text: { type: 'string' } },
+        required: ['text'],
+        additionalProperties: false,
+      },
+      handler: async ({ text }) => {
+        executions += 1;
+        return `count: ${text}`;
+      },
+    });
+    const fakeAi = {
+      async *getCompletionStream(message, history, opts) {
+        if (opts.tools && opts.tools.length > 0) {
+          yield {
+            content: '',
+            done: true,
+            tool_calls: [
+              { id: 'dup-1', function: { name: 'test_count', arguments: '{"text":"same"}' } },
+              { id: 'dup-2', function: { name: 'test_count', arguments: '{"text":"same"}' } },
+            ],
+          };
+          return;
+        }
+        yield { content: '去重后回答', done: false };
+        yield { content: '', done: true };
+      },
+    };
+    const events = [];
+    for await (const ev of new agentMod.AgentService(fakeAi).chatStream('去重', [])) {
+      events.push(ev);
+    }
+    expect(executions).toBe(1);
+    expect(events.filter(e => e.type === 'tool_call')).toHaveLength(1);
+    expect(events.find(e => e.type === 'trace').trace.toolCalls).toHaveLength(1);
+  });
+
+  it('chatStream：parallelSafe=false 的工具同轮内串行执行', async () => {
+    let running = 0;
+    let maxRunning = 0;
+    agentTools.toolRegistry.register({
+      name: 'test_serial',
+      description: '串行工具',
+      timeoutMs: 2000,
+      parallelSafe: false,
+      parameters: {
+        type: 'object',
+        properties: { text: { type: 'string' } },
+        required: ['text'],
+        additionalProperties: false,
+      },
+      handler: async ({ text }) => {
+        running += 1;
+        maxRunning = Math.max(maxRunning, running);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        running -= 1;
+        return `serial: ${text}`;
+      },
+    });
+    const fakeAi = {
+      async *getCompletionStream(message, history, opts) {
+        if (opts.tools && opts.tools.length > 0) {
+          yield {
+            content: '',
+            done: true,
+            tool_calls: [
+              { id: 's1', function: { name: 'test_serial', arguments: '{"text":"a"}' } },
+              { id: 's2', function: { name: 'test_serial', arguments: '{"text":"b"}' } },
+            ],
+          };
+          return;
+        }
+        yield { content: '串行完成', done: false };
+        yield { content: '', done: true };
+      },
+    };
+    for await (const _ev of new agentMod.AgentService(fakeAi).chatStream('串行', [])) {
+      // drain
+    }
+    expect(maxRunning).toBe(1);
+  });
+
+  it('chatStream：无进展检测在执行前生效（重复轮次不再执行工具）', async () => {
+    let executions = 0;
+    let decisions = 0;
+    agentTools.toolRegistry.register({
+      name: 'test_repeat',
+      description: '重复调用工具',
+      timeoutMs: 1000,
+      parameters: {
+        type: 'object',
+        properties: { text: { type: 'string' } },
+        required: ['text'],
+        additionalProperties: false,
+      },
+      handler: async () => {
+        executions += 1;
+        return 'same result';
+      },
+    });
+    const fakeAi = {
+      async *getCompletionStream(message, history, opts) {
+        if (opts.tools && opts.tools.length > 0) {
+          decisions += 1;
+          yield {
+            content: '',
+            done: true,
+            tool_calls: [{ id: `rep-${decisions}`, function: { name: 'test_repeat', arguments: '{"text":"1"}' } }],
+          };
+          return;
+        }
+        yield { content: '收尾回答', done: false };
+        yield { content: '', done: true };
+      },
+    };
+    const events = [];
+    for await (const ev of new agentMod.AgentService(fakeAi).chatStream('重复问题', [])) {
+      events.push(ev);
+    }
+    expect(executions).toBe(1);
+    expect(events.filter(e => e.type === 'tool_call')).toHaveLength(1);
+    const trace = events.find(e => e.type === 'trace');
+    expect(trace.trace.finishReason).toBe('no_progress');
+    expect(trace.trace.toolCalls).toHaveLength(1);
   });
 
   it('chatStream：连续相同工具调用 → 无进展检测强制收尾', async () => {

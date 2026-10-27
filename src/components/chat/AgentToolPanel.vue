@@ -25,6 +25,7 @@ const finishReasonLabel = computed(() => {
   if (!props.agentTrace) return '';
   const map = {
     direct_answer: '直接回答',
+    tool_assisted: '工具辅助回答',
     round_limit: '达到轮次上限',
     no_progress: '无进展强制收尾',
     error: '出错收尾',

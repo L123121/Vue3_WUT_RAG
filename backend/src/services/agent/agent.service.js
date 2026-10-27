@@ -3,7 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 const { AiService } = require("../llm/ai.service");
-const { executeToolDetailed, getToolSchemas, getToolNames } = require("./agent-tools.service");
+const { executeToolDetailed, getToolSchemas, getToolNames, getToolMeta } = require("./agent-tools.service");
 const { spillToolResult, compactHistoricalToolResults } = require("../conversation/context-compaction.service");
 const config = require("../../config");
 const { logEvent } = require('../observability/observability.service');
@@ -85,8 +85,9 @@ const SYSTEM_PROMPT = `你是"武理小精灵"，武汉理工大学校园助手�
 规则：
 1. 如果问题需要检索校园知识库（食堂/图书馆/宿舍/课程/政策/奖学金/面试题等）→ 调用 search_knowledge_base
 2. 如果不需要任何工具，直接回答即可
-3. 调用工具后，必须基于工具结果给出最终回答；如果工具结果不足以回答，请如实说明
-4. 回答用简洁的中文`;
+3. 需要调用工具时直接发起调用，不要先输出解释性文字（解释会被丢弃，只浪费 token）
+4. 调用工具后，必须基于工具结果给出最终回答；如果工具结果不足以回答，请如实说明
+5. 回答用简洁的中文`;
 
 /**
  * Agent 决策失败专用错误：控制器据 agentShouldFallback 标记降级回 RAG 链路
@@ -133,6 +134,34 @@ function stableStringify(value) {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
   const keys = Object.keys(value).sort();
   return `{${keys.map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(",")}}`;
+}
+
+/** 单次工具调用的稳定签名：name + 规范化参数（去重与无进展检测共用，保证口径一致） */
+function toolCallSignature(tc) {
+  return `${tc?.function?.name || ""}:${stableStringify(parseToolArgs(tc?.function?.arguments))}`;
+}
+
+/**
+ * 同一轮内相同 name+args 的调用只保留一次。
+ * 模型偶尔会把同一检索发起两遍，重复执行既多一次检索延迟也多一份上下文 token；
+ * assistant 消息按去重后的调用构造，tool 消息随之对齐，协议仍然合法。
+ */
+function dedupeToolCalls(toolCalls, round) {
+  const seen = new Set();
+  const unique = [];
+  for (const tc of toolCalls) {
+    const signature = toolCallSignature(tc);
+    if (seen.has(signature)) continue;
+    seen.add(signature);
+    unique.push(tc);
+  }
+  if (unique.length < toolCalls.length) {
+    logEvent("info", "agent_duplicate_tool_call_skipped", {
+      round,
+      dropped: toolCalls.length - unique.length,
+    });
+  }
+  return unique;
 }
 
 /**
@@ -300,7 +329,7 @@ class AgentService {
   async *chatStream(message, history = [], options = {}) {
     const totalStart = Date.now();
     const tools = getToolSchemas();
-    const maxRounds = config.agent?.maxToolRounds || 2;
+    const maxRounds = Math.max(1, Number(config.agent?.maxToolRounds) || 2);
     let messages = buildDecisionMessages(message, history);
 
     // agent tracer（可观测性，L4）：记录轮次/工具调用/耗时/收尾原因，结束时随 SSE 下发
@@ -357,10 +386,13 @@ class AgentService {
       }
 
       const maxToolCallsPerRound = config.agent?.maxToolCallsPerRound || 4;
-      const validCalls = (toolCalls || []).filter((tc) => tc.function?.name).slice(0, maxToolCallsPerRound);
-      if ((toolCalls || []).length > validCalls.length) {
-        logEvent('warn', 'agent_tool_call_limit_applied', { requested: toolCalls.length, limit: maxToolCallsPerRound });
+      const requestedCalls = (toolCalls || []).filter((tc) => tc.function?.name);
+      let validCalls = requestedCalls.slice(0, maxToolCallsPerRound);
+      if (requestedCalls.length > validCalls.length) {
+        logEvent('warn', 'agent_tool_call_limit_applied', { requested: requestedCalls.length, limit: maxToolCallsPerRound });
       }
+      // 同轮去重：相同 name+args 只执行一次（模型偶发重复发起，白等一次检索）
+      validCalls = dedupeToolCalls(validCalls, round + 1);
 
       // LLM 直接回答（无工具调用）→ 内容已在决策阶段实时透传，此处直接收尾
       if (validCalls.length === 0) {
@@ -375,41 +407,86 @@ class AgentService {
         return;
       }
 
+      // ---- 无进展检测（执行前）：本轮工具调用与上轮完全相同 → 不再执行，直接强制收尾 ----
+      // 放在执行前：为了"发现重复"而多跑一次可能耗时 15s 的检索是纯浪费。
+      const signature = validCalls.map(toolCallSignature).join("|");
+      if (signature === lastSignature) {
+        repeatCount += 1;
+        if (repeatCount >= 2) {
+          logEvent('warn', 'agent_no_progress_forced_finish', { signature });
+          trace.finishReason = "no_progress";
+          messages = [
+            ...messages,
+            { role: "user", content: "你已多次调用相同工具。请基于已有信息直接给出最终回答，不要再调用任何工具。" },
+          ];
+          reachedLimit = true;
+          break;
+        }
+      } else {
+        lastSignature = signature;
+        repeatCount = 1;
+      }
+
       // 下发 tool_call 事件（前端展示）
       for (const tc of validCalls) {
         yield { type: "tool_call", tool_call: { name: tc.function.name, arguments: parseToolArgs(tc.function.arguments) } };
       }
 
-      // 执行工具（并行：多工具延迟从求和降为取最大值；单工具独立计时；含超时闸门）
-      const results = await Promise.all(
-        validCalls.map(async (tc) => {
-          const start = Date.now();
-          let r;
-          try {
-            r = await this.runTool(tc.function.name, parseToolArgs(tc.function.arguments), {
-              userId: options.userId,
-              conversationId: options.conversationId,
-              traceId: trace.traceId,
-              signal: options.signal,
-            });
-          } catch (err) {
-            if (err.name === "AbortError" || options.signal?.aborted) throw err;
-            r = { ok: false, content: `工具执行失败: ${err.message}`, data: null };
-          }
-          return {
-            tc,
-            ok: r.ok,
-            result: r.content,
-            uiSummary: r.uiSummary,
-            data: r.data,
-            durationMs: Date.now() - start,
-          };
-        })
-      );
+      // 执行工具：parallelSafe 的并行（延迟取最大值），标记为不安全的串行（同轮内不并发），
+      // 结果按原始调用顺序回填，保证事件/trace/回注消息顺序与模型发起顺序一致。
+      const pendingCalls = validCalls.map((tc, index) => ({
+        tc,
+        index,
+        args: parseToolArgs(tc.function.arguments),
+      }));
+      const parallelCalls = [];
+      const serialCalls = [];
+      for (const call of pendingCalls) {
+        if (getToolMeta(call.tc.function.name).parallelSafe) parallelCalls.push(call);
+        else serialCalls.push(call);
+      }
+
+      const executeCall = async ({ tc, index, args }) => {
+        const start = Date.now();
+        let r;
+        try {
+          r = await this.runTool(tc.function.name, args, {
+            userId: options.userId,
+            conversationId: options.conversationId,
+            traceId: trace.traceId,
+            signal: options.signal,
+          });
+        } catch (err) {
+          if (err.name === "AbortError" || options.signal?.aborted) throw err;
+          r = { ok: false, content: `工具执行失败: ${err.message}`, data: null };
+        }
+        return {
+          index,
+          tc,
+          args,
+          ok: r.ok,
+          result: r.content,
+          uiSummary: r.uiSummary,
+          data: r.data,
+          durationMs: Date.now() - start,
+        };
+      };
+
+      const executed = new Array(pendingCalls.length);
+      for (const r of await Promise.all(parallelCalls.map(executeCall))) {
+        executed[r.index] = r;
+      }
+      for (const call of serialCalls) {
+        executed[call.index] = await executeCall(call);
+      }
+      const results = executed;
+
+      // 工具已执行：无论后续是继续决策还是直接收尾，收尾原因都不再是"直接回答"
+      trace.finishReason = "tool_assisted";
       for (const r of results) {
         trace.toolCalls.push({
           name: r.tc.function.name,
-          args: parseToolArgs(r.tc.function.arguments),
+          args: r.args,
           ok: r.ok,
           durationMs: r.durationMs,
         });
@@ -483,26 +560,6 @@ class AgentService {
         messages = compaction.messages;
         trace.compaction.compactedGroups += compaction.compactedGroups;
         trace.compaction.savedChars += compaction.savedChars;
-      }
-
-      // ---- 无进展检测：连续 2 轮相同工具调用 → 强制收尾 ----
-      // 签名用 stableStringify 规范化（解析后 key 排序），避免 JSON key 顺序/空白差异绕过检测
-      const signature = validCalls.map((t) => `${t.function.name}:${stableStringify(parseToolArgs(t.function.arguments))}`).join("|");
-      if (signature === lastSignature) {
-        repeatCount++;
-        if (repeatCount >= 2) {
-          logEvent('warn', 'agent_no_progress_forced_finish', { signature });
-          trace.finishReason = "no_progress";
-          messages = [
-            ...messages,
-            { role: "user", content: "你已多次调用相同工具。请基于已有信息直接给出最终回答，不要再调用任何工具。" },
-          ];
-          reachedLimit = true;
-          break;
-        }
-      } else {
-        lastSignature = signature;
-        repeatCount = 1;
       }
 
       // 达到最大轮次 → 强制收尾（最后生成不带 tools，杜绝继续调工具）
