@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { ArrowLeft, BookOpen, ChevronLeft, ChevronRight, Eye, EyeOff, FileWarning, PencilLine, ShieldAlert } from 'lucide-vue-next';
 import MobileMenuButton from '../components/layout/MobileMenuButton.vue';
 import MarkdownRenderer from '../components/chat/MarkdownRenderer.vue';
+import SubscribeSourceAction from '../components/campus/SubscribeSourceAction.vue';
 import { useWikiEntry, formatWikiDate, formatWikiSize } from '../composables/useWiki.js';
 import { wikiEntryPath } from '../utils/wikiTree.js';
 import { splitCategory } from '../constants/wiki-categories.js';
@@ -110,6 +111,7 @@ const editInKnowledgeBase = () => {
         <span>校园百科</span>
       </router-link>
       <div class="flex-1" />
+      <SubscribeSourceAction v-if="entry?.visible && !entry.stale" :doc-id="docId" />
       <button
         v-if="isAdmin && entry"
         @click="toggleVisibility"

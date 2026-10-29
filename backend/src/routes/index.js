@@ -13,5 +13,7 @@ router.use('/rag', ragRoutes);
 router.use('/eval', evalRoutes);
 router.use('/share', shareRoutes);
 router.use('/wiki', wikiRoutes);
+router.use('/campus', require('./campus.routes').createCampusRouter());
+router.use('/agent-runs', require('./agent-runs.routes').createAgentRunsRouter());
 
 module.exports = { router };

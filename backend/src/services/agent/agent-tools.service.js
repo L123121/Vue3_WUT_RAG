@@ -25,7 +25,12 @@ const TIMEOUT_LOCAL = 3000;
 // 创建全局注册表并注册内置工具
 // ============================================================
 
-const toolRegistry = new ToolRegistry();
+const toolRegistry = new ToolRegistry({
+  authorize: async (tool, context) => {
+    const principal = await require('../auth/auth.service').getUserById(context.userId);
+    return require('../agent-runtime/tool-policy.service').getToolPolicyService().decide(tool.name, principal);
+  },
+});
 
 const builtinTools = [
   {

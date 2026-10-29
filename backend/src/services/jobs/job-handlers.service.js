@@ -15,6 +15,15 @@ function registerDefaultJobHandlers() {
     await wikiService.compileRelatedPages(String(payload.docId));
   });
 
+  registerJobHandler('campus.sources.check', async () => {
+    await require('../campus/source-radar.service').getSourceRadar().checkAll();
+  });
+
+  registerJobHandler('campus.source.refresh', async ({ docId }) => {
+    const radar = require('../campus/source-radar.service').getSourceRadar();
+    if (await radar.state(docId)) await radar.capture(docId);
+  });
+
   registerJobHandler('uploads.cleanup', async () => {
     const { cleanOldUploads } = require('../knowledge/file-upload.service');
     await cleanOldUploads();
@@ -26,7 +35,7 @@ function registerDefaultJobHandlers() {
   });
 
   logEvent('info', 'background_job_handlers_registered', {
-    types: ['quality.audit', 'wiki.relations.compile', 'uploads.cleanup', 'privacy.retention.sweep'],
+    types: ['quality.audit', 'wiki.relations.compile', 'uploads.cleanup', 'privacy.retention.sweep', 'campus.sources.check', 'campus.source.refresh'],
   });
 }
 

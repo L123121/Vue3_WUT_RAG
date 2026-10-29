@@ -5,6 +5,16 @@ const { metrics } = require('../observability/metrics.service');
 const { logEvent } = require('../observability/observability.service');
 const { buildFollowups } = require('./rag-followups.service');
 const faithfulnessGate = require('./faithfulness-gate.service');
+const { buildEvidenceReport, revisionOf } = require('../campus/evidence.service');
+
+function answerEvidence(reply, card, pipeline, gate) {
+  if (gate?.action === 'block') return null;
+  const sources = (pipeline.evidenceSources || []).filter(source => (
+    pipeline.context.slice(source.start, source.start + source.text.length) === source.text
+  ));
+  if (!sources.length) return null;
+  return { ...buildEvidenceReport({ answer: reply, card, sources }), contextRevision: revisionOf(pipeline.context) };
+}
 
 /**
  * RAG 生成层：prompt 组装、非流式/流式 LLM 生成、失败降级与收尾旁路
@@ -86,7 +96,8 @@ async function generateAnswer(svc, { message, history, pipeline, tracer, options
     if (gate.action === 'block') reply = gate.refusalText;
   }
 
-  return { reply, aiLatency, llmUsage, llmModel, processCard, grounding, faithfulnessGate: gate || null };
+  const evidence = answerEvidence(reply, processCard, pipeline, gate);
+  return { reply, aiLatency, llmUsage, llmModel, processCard, grounding, faithfulnessGate: gate || null, evidence };
 }
 
 /**
@@ -147,6 +158,8 @@ async function* streamAnswer(svc, { message, history, options, pipeline, tracer,
           });
           yield { type: 'faithfulness_gate', gate, traceId: tracer?.traceId };
         }
+        const evidence = answerEvidence(fullReply, processCard, pipeline, gate);
+        if (evidence) yield { type: 'evidence', evidence };
 
         metrics.recordLatency('total', Date.now() - totalStart);
         svc._recordTraceStage(tracer, 'total', totalStart, true, {

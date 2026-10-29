@@ -234,6 +234,9 @@ function mapInternalEventToRunEvent(event, fallbackTraceId) {
   if (event.type === "grounding") {
     return { type: "grounding", traceId: fallbackTraceId, data: { grounding: event.grounding || null } };
   }
+  if (event.type === "evidence") {
+    return { type: "evidence", traceId: fallbackTraceId, data: { evidence: event.evidence || null } };
+  }
   if (event.type === "faithfulness_gate") {
     return { type: "faithfulness.gate", traceId: resolveTraceId(event.traceId, fallbackTraceId), data: { gate: event.gate || null } };
   }
@@ -321,6 +324,8 @@ function writeLegacyStreamEvent(res, event, fallbackTraceId) {
         fallbackReason: outcome.fallbackReason || null,
       },
     });
+  } else if (event.type === "evidence") {
+    writeSse(res, { traceId: fallbackTraceId, evidence: event.evidence });
   } else if (event.type === "grounding") {
     writeSse(res, { traceId: fallbackTraceId, grounding: event.grounding });
   } else if (event.type === "faithfulness_gate") {

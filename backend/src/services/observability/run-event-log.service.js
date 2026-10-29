@@ -42,6 +42,15 @@ const getDefaultOptions = () => ({
 const normalizeEvent = (event, options = {}) => {
   const type = String(event?.type || '').slice(0, 120);
   const data = sanitizeValue(event?.data && typeof event.data === 'object' ? event.data : {});
+  if (type === 'evidence' && options.includeContent !== true) {
+    data.evidence = {
+      version: 1, origin: event?.data?.evidence?.origin || '', contentOmitted: true,
+      claimCount: event?.data?.evidence?.claims?.length || 0,
+      sourceCount: event?.data?.evidence?.sources?.length || 0,
+    };
+  } else if (type === 'evidence' && data.evidence) {
+    data.evidence.truncated = data.evidence.truncated || event?.data?.evidence?.claims?.length > 50 || event?.data?.evidence?.evidence?.length > 50;
+  }
   if (type === 'message.delta' && options.includeContent !== true && typeof data.content === 'string') {
     data.contentLength = data.content.length;
     data.content = '';

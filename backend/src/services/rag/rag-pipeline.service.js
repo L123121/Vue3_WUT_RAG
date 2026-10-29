@@ -85,9 +85,9 @@ async function buildParentContext(svc, message, topChunks, options, tracer) {
   });
 
   // 5. 组装上下文（由 maxContextLength 控制长度）
-  const { context, sources } = await svc._buildContextFromParents(parentCandidates, truncateOverrides);
+  const { context, sources, evidenceSources = [] } = await svc._buildContextFromParents(parentCandidates, truncateOverrides);
 
-  return { context, sources };
+  return { context, sources, evidenceSources };
 }
 
 /**
@@ -178,12 +178,14 @@ async function runRAGPipeline(svc, message, history = [], options = {}) {
   // 父段处理
   let enhancedContext = '';
   let parentSources = [];
+  let evidenceSources = [];
   if (svc.parentChildEnabled && topChunks.length > 0) {
     const pcStart = Date.now();
     try {
       const built = await buildParentContext(svc, message, topChunks, options, tracer);
       enhancedContext = built.context;
       parentSources = built.sources;
+      evidenceSources = built.evidenceSources || [];
 
       metrics.recordLatency('parentChild', Date.now() - pcStart);
       svc._recordTraceStage(tracer, 'parent_child', pcStart, true, {
@@ -211,6 +213,7 @@ async function runRAGPipeline(svc, message, history = [], options = {}) {
   return {
     context: enhancedContext,
     sources: parentSources,
+    evidenceSources,
     topChunks,
     retrieval: retrievalSummary,
     questionType,

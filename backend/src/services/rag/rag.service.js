@@ -165,6 +165,7 @@ class RagService {
         isMock: false,
         sources: pipeline.sources,
         context: pipeline.context,
+        evidenceSources: pipeline.evidenceSources || [],
         model: 'local-hybrid-search+retrieve-only',
         questionType: pipeline.questionType,
         rewrittenQuery: pipeline.rewrittenQuery,
@@ -175,7 +176,7 @@ class RagService {
 
     // 生成回答:prompt 组装 / LLM 调用 / grounding 校验拆至 rag-generation.service
     const {
-      reply, aiLatency, llmUsage, llmModel, processCard, grounding, faithfulnessGate,
+      reply, aiLatency, llmUsage, llmModel, processCard, grounding, faithfulnessGate, evidence,
     } = await ragGeneration.generateAnswer(this, { message, history, pipeline, tracer, options });
 
     const totalLatency = Date.now() - totalStart;
@@ -217,6 +218,7 @@ class RagService {
       retrieval: pipeline.retrieval,
       grounding: grounding || null,
       faithfulnessGate: faithfulnessGate || null,
+      evidence: evidence || null,
       processCard: processCard || null,
       followups: buildFollowups({
         sources: pipeline.sources,

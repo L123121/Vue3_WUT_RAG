@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import wutLogoImg from '../../assets/wuhan-university-logo.png';
 import ConversationList from '../chat/ConversationList.vue';
-import { Activity, BookOpen, Database, MessageSquare, BarChart3, LogOut, MessagesSquare, ChevronUp, Moon, Sun } from 'lucide-vue-next';
+import { Activity, BookOpen, Database, MessageSquare, BarChart3, LogOut, MessagesSquare, ChevronUp, Moon, Sun, ListTodo, Bot } from 'lucide-vue-next';
 import { useAuthStore } from '../../stores/auth.store.js';
 import { useConversationStore } from '../../stores/conversation.store.js';
 import { useToastStore } from '../../stores/toast.store.js';
@@ -127,6 +127,29 @@ watch(showProfilePanel, (val) => {
           <span>评测</span>
         </button>
         </div>
+    </div>
+
+    <div class="px-3 mb-2">
+      <button
+        type="button"
+        class="w-full h-10 rounded-xl inline-flex items-center gap-2 px-3 text-xs font-bold transition-colors border"
+        :class="currentPath === '/workbench' ? 'bg-teal-700 text-white border-teal-600' : 'bg-white/70 dark:bg-gray-800/60 border-slate-200 dark:border-gray-700 text-slate-600 dark:text-gray-300 hover:border-teal-300'"
+        @click="router.push('/workbench')"
+      >
+        <ListTodo :size="15" />
+        办事工作台
+        <span class="ml-auto text-[10px] opacity-70">计划 · 变化</span>
+      </button>
+      <button
+        type="button"
+        class="mt-2 w-full h-10 rounded-xl inline-flex items-center gap-2 px-3 text-xs font-bold transition-colors border"
+        :class="currentPath === '/agent-tasks' ? 'bg-sky-700 text-white border-sky-600' : 'bg-white/70 dark:bg-gray-800/60 border-slate-200 dark:border-gray-700 text-slate-600 dark:text-gray-300 hover:border-sky-300'"
+        @click="router.push('/agent-tasks')"
+      >
+        <Bot :size="15" />
+        Agent 任务
+        <span class="ml-auto text-[10px] opacity-70">审批 · 恢复</span>
+      </button>
     </div>
 
     <div v-if="authStore.isAdmin" class="px-3 mb-2">

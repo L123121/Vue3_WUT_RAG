@@ -55,7 +55,7 @@ const parse = (value) => {
 
 const asText = (value) => String(value ?? '');
 
-const sourceRevision = (doc) => String(doc?.contentHash || crypto.createHash('sha256').update(asText(doc?.content), 'utf8').digest('hex'));
+const sourceRevision = (doc) => String(doc?.sourceRevision || doc?.contentHash || crypto.createHash('sha256').update(asText(doc?.content), 'utf8').digest('hex'));
 
 const queryTerms = (query) => Array.from(new Set(
   asText(query).toLowerCase().match(/[\u4e00-\u9fff]{2,}|[a-z0-9_]{2,}/gi) || []
@@ -275,6 +275,14 @@ class WikiService {
       } catch (err) {
         logEvent('warn', 'wiki_relation_job_enqueue_failed', { docId, error: err.message });
       }
+    }
+
+    try {
+      await this._enqueueJob('campus.source.refresh', { docId }, {
+        idempotencyKey: `campus-source:${docId}:${revision}:${meta.updatedAt}:${visible}`,
+      });
+    } catch (error) {
+      logEvent('warn', 'campus_source_refresh_enqueue_failed', { docId, error: error.message });
     }
 
     return { docId, ...meta };
@@ -539,7 +547,10 @@ ${candidateList}
     const { documents } = await this.documentService.listDocuments({ page: 1, limit: 100_000 });
     const metas = await this.listMeta();
     const scored = [];
-    for (const doc of documents) {
+    for (const summary of documents) {
+      if (!metas[summary.id]?.visible) continue;
+      const doc = typeof summary.content === 'string' ? summary : await this.documentService.getDocument(summary.id);
+      if (!doc) continue;
       const meta = await this._syncSourceRevision(doc, metas[doc.id]);
       if (!meta?.visible || meta.reviewState === 'stale' || (meta.sourceRevision && meta.sourceRevision !== sourceRevision(doc))) continue;
       const raw = asText(doc.content).toLowerCase();
@@ -548,7 +559,13 @@ ${candidateList}
       const score = terms.reduce((total, term) => total + (title.includes(term) ? 5 : 0) + (category.includes(term) ? 3 : 0) + (raw.includes(term) ? 1 : 0), 0);
       if (score <= 0) continue;
       const analysis = this.analyze(doc.content, doc.title);
-      scored.push({ ...this._toEntry(doc, meta, { matched: score }), body: analysis.body, score });
+      scored.push({
+        ...this._toEntry(doc, meta, { matched: score }), body: analysis.body, score,
+        sourceLabel: analysis.sourceLabel, simulated: analysis.simulated,
+        effectiveFrom: analysis.meta.effective_from || analysis.meta.valid_from || null,
+        effectiveUntil: analysis.meta.effective_until || analysis.meta.valid_until || null,
+        scope: analysis.meta.scope || analysis.meta['适用范围'] || null,
+      });
     }
     return scored.sort((a, b) => b.score - a.score).slice(0, Math.max(1, Math.min(Number(limit) || 3, 10)));
   }
@@ -568,6 +585,9 @@ ${candidateList}
       contentLength: doc.contentLength || asText(doc.content).length,
       sourceLabel: analysis.sourceLabel,
       simulated: analysis.simulated,
+      effectiveFrom: analysis.meta.effective_from || analysis.meta.valid_from || null,
+      effectiveUntil: analysis.meta.effective_until || analysis.meta.valid_until || null,
+      scope: analysis.meta.scope || analysis.meta['适用范围'] || null,
       // 编译期已经算好的互链，详情页读取时零额外检索；只在详情返回，
       // 列表接口不带（避免为每条列表项都做一次关联解析）
       relatedPages: await this._resolveRelatedPages(meta),

@@ -113,6 +113,7 @@ async function startServer() {
       startSpillCleanup();
       const { startRetentionSweeper } = require('./services/privacy/retention.service');
       startRetentionSweeper();
+      require('./services/campus/source-radar-scheduler.service').startSourceRadarScheduler();
     }
     if (config.jobs?.runnerEnabled !== false) startJobRunner();
   } catch (err) {
@@ -132,6 +133,7 @@ async function shutdown(signal, exitCode = 0) {
   const drainTimeoutMs = parseInt(process.env.SHUTDOWN_DRAIN_TIMEOUT_MS, 10) || 25000;
   setTimeout(() => process.exit(exitCode), drainTimeoutMs + 5000).unref();
   operationalMetrics.flush();
+  require('./services/campus/source-radar-scheduler.service').stopSourceRadarScheduler();
   try { require('./services/conversation/context-compaction.service').stopSpillCleanup(); } catch { /* 清理器未启动时忽略 */ }
   try { require('./services/privacy/retention.service').stopRetentionSweeper(); } catch { /* 清理器未启动时忽略 */ }
   try { require('./services/knowledge/file-upload.service').stopUploadsCleanup(); } catch { /* 清理器未启动时忽略 */ }

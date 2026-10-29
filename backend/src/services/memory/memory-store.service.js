@@ -259,6 +259,16 @@ class SQLiteStore {
     return this._stmt.hdel.run(key, field).changes;
   }
 
+  async hcompareAndSet(key, field, expected, value) {
+    const serialize = item => typeof item === 'object' ? JSON.stringify(item) : String(item);
+    const next = serialize(value);
+    if (expected === null) {
+      return this._db.prepare('INSERT OR IGNORE INTO hash (key, field, value) VALUES (?, ?, ?)').run(key, field, next).changes === 1;
+    }
+    return this._db.prepare('UPDATE hash SET value = ? WHERE key = ? AND field = ? AND value = ?')
+      .run(next, key, field, serialize(expected)).changes === 1;
+  }
+
   // ==================== List 操作 ====================
 
   async rpush(key, value) {

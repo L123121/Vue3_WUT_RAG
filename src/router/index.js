@@ -19,6 +19,18 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/agent-tasks',
+    name: 'AgentTasks',
+    component: () => import('../views/AgentTasks.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/workbench',
+    name: 'CampusWorkbench',
+    component: () => import('../views/CampusWorkbench.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/knowledge',
     name: 'Knowledge',
     component: () => import('../views/KnowledgeBase.vue'),

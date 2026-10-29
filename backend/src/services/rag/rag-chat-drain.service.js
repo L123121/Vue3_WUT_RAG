@@ -22,6 +22,7 @@ async function drainChat(svc, message, history = [], options = {}) {
   let processCard = null;
   let grounding = null;
   let faithfulnessGate = null;
+  let evidence = null;
   let followups = [];
   let trace = null;
   let pipelineMeta = null;
@@ -37,6 +38,8 @@ async function drainChat(svc, message, history = [], options = {}) {
         usage = event.usage || null;
       } else if (event.type === 'process') {
         processCard = event.processCard || null;
+      } else if (event.type === 'evidence') {
+        evidence = event.evidence || null;
       } else if (event.type === 'grounding') {
         grounding = event.grounding || null;
       } else if (event.type === 'faithfulness_gate') {
@@ -112,6 +115,7 @@ async function drainChat(svc, message, history = [], options = {}) {
     retrieval,
     grounding: grounding || null,
     faithfulnessGate: faithfulnessGate || null,
+    evidence: evidence || null,
     processCard: processCard || null,
     followups,
     traceId: trace?.traceId || null,

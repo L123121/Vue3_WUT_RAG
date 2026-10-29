@@ -73,6 +73,15 @@ describe('run-event-log.service', () => {
     expect(event.data).toMatchObject({ content: '', contentLength: 4, contentOmitted: true });
   });
 
+  it('证据附件遵循不记录正文开关，开启正文时才保存引文', () => {
+    const event = { runId: 'run_evidence_1', type: 'evidence', data: { evidence: { origin: 'retrieval_snapshot', sources: [{ docId: 'd' }], claims: [{ text: '私有结论' }], evidence: [{ quote: '私有引文' }] } } };
+    const hidden = normalizeEvent(event, { includeContent: false });
+    expect(hidden.data.evidence).toMatchObject({ contentOmitted: true, claimCount: 1, sourceCount: 1 });
+    expect(JSON.stringify(hidden)).not.toContain('私有');
+    const visible = normalizeEvent(event, { includeContent: true });
+    expect(visible.data.evidence.evidence[0].quote).toBe('私有引文');
+  });
+
   it('超过容量时按最近运行和每次运行事件数压缩', async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wuli-run-events-'));
     tempDirectories.push(tempDir);

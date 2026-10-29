@@ -1,5 +1,7 @@
 "use strict";
 
+const { revisionOf } = require('../campus/evidence.service');
+
 /**
  * 父段上下文组装：子片段按父段落聚合 + 从已 rerank 的父段构建最终上下文
  * 从 rag.service 拆出，纯数据变换 + 文档查询，无检索/生成逻辑
@@ -54,6 +56,8 @@ async function buildContextFromParents(parentCandidates, { maxContextLength, get
 
   const contextParts = [];
   const sources = [];
+  const evidenceSources = [];
+  const separator = '\n\n' + '='.repeat(40) + '\n\n';
   let totalLength = 0;
   let docIndex = 0;
   const docCache = new Map();
@@ -73,34 +77,33 @@ async function buildContextFromParents(parentCandidates, { maxContextLength, get
     if (!paraText) continue;
     docIndex++;
 
-    const header = `【文档 ${docIndex}】${doc.title}（段落 ${(match.parentIdx ?? 0) + 1}）`;
-    const entry = `${header}\n${paraText}`;
+    const header = `【文档 ${docIndex}】${doc.title}（段落 ${(match.parentIdx ?? 0) + 1}）\n`;
+    const gap = contextParts.length ? separator.length : 0;
+    const remaining = maxContextLength - totalLength - gap - header.length;
+    if (remaining <= 0 || (paraText.length > remaining && remaining <= 200)) break;
+    const suffix = paraText.length > remaining ? '\n...(截断)' : '';
+    const quote = paraText.slice(0, Math.max(0, remaining - suffix.length));
+    const start = totalLength + gap + header.length;
+    const sourceRevision = typeof doc.content === 'string' && doc.content.includes(quote) ? revisionOf(doc.content) : null;
     const rerankScore = match._rerankScore || match.bestChunk?.score || 0;
-
-    if (totalLength + entry.length > maxContextLength) {
-      const remaining = maxContextLength - totalLength;
-      if (remaining > 200) {
-        contextParts.push(entry.substring(0, remaining) + '\n...(截断)');
-        sources.push({
-          id: doc.id, title: doc.title, category: doc.category,
-          matchedScore: rerankScore, rerankScore, rerankModel: match._rerankModel || '',
-          snippet: paraText.substring(0, 1500),
-        });
-      }
-      break;
-    }
-
-    contextParts.push(entry);
-    totalLength += entry.length;
+    contextParts.push(`${header}${quote}${suffix}`);
+    totalLength = start + quote.length + suffix.length;
     sources.push({
-      id: doc.id, title: doc.title, category: doc.category,
+      id: doc.id, title: doc.title, category: doc.category, sourceRevision,
       matchedScore: rerankScore, rerankScore, rerankModel: match._rerankModel || '',
-      snippet: paraText.substring(0, 1500),
+      snippet: quote.slice(0, 1500),
     });
+    evidenceSources.push({
+      docId: doc.id, title: doc.title, revision: sourceRevision, start, text: quote,
+      sourceLabel: doc.metadata?.source || '',
+      effectiveFrom: doc.metadata?.effectiveFrom || null, effectiveUntil: doc.metadata?.effectiveUntil || null,
+      scope: doc.metadata?.scope || null,
+    });
+    if (suffix) break;
   }
 
-  const context = contextParts.join('\n\n' + '='.repeat(40) + '\n\n');
-  return { sources, context };
+  const context = contextParts.join(separator);
+  return { sources, context, evidenceSources };
 }
 
 module.exports = { groupChunksByParent, buildContextFromParents };

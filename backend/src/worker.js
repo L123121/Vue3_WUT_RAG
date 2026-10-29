@@ -21,8 +21,10 @@ async function startWorker() {
   void getObjectStorage().probe?.();
   startUploadsCleanup();
   startRetentionSweeper();
+  require('./services/campus/source-radar-scheduler.service').startSourceRadarScheduler();
   startSpillCleanup();
   startJobRunner();
+  if (process.env.AGENT_RUNTIME_ENABLED !== 'false') require('./services/agent-runtime/run-worker.service').startAgentRunWorker();
   logEvent('info', 'worker_started', {
     role: config.runtime?.role || 'worker',
     queueBackend: config.jobs?.queueBackend || 'sqlite',
@@ -36,8 +38,11 @@ async function shutdown(signal) {
   shuttingDown = true;
   logEvent('info', 'worker_shutdown_signal', { signal });
   stopUploadsCleanup();
+  require('./services/campus/source-radar-scheduler.service').stopSourceRadarScheduler();
   stopRetentionSweeper();
   stopSpillCleanup();
+  await require('./services/agent-runtime/run-worker.service').stopAgentRunWorker();
+  require('./services/agent-runtime/runtime-store.service').getAgentRuntimeStore().close();
   await closeJobStore();
   await closePostgres();
   process.exit(0);

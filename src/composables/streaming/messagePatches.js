@@ -37,6 +37,9 @@ export function createMessagePatchHandlers({ writeMessage, conversationId, aiMsg
     onProcess: (processCard) => {
       writeMessage(conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'processCard', processCard));
     },
+    onEvidence: (evidence) => {
+      writeMessage(conversationId, aiMsgId, m => patchMessageForEvent(m, 'evidence', evidence));
+    },
     onGrounding: (grounding) => {
       // 运行时引用校验：溯源覆盖率随收尾下发，MessageBubble 展示"已溯源 xx%"徽标
       writeMessage(conversationId, aiMsgId, (m) => patchMessageForEvent(m, 'grounding', grounding));

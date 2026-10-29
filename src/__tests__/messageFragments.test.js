@@ -35,6 +35,7 @@ describe('message fragments', () => {
       MESSAGE_FRAGMENT_TYPES.ATTACHMENTS,
       MESSAGE_FRAGMENT_TYPES.TEXT,
       MESSAGE_FRAGMENT_TYPES.PROCESS_CARD,
+      MESSAGE_FRAGMENT_TYPES.EVIDENCE,
       MESSAGE_FRAGMENT_TYPES.INTENT_BADGE,
       MESSAGE_FRAGMENT_TYPES.USAGE,
     ]);
@@ -148,6 +149,7 @@ describe('message fragments', () => {
       decision: { provider: 'jev', status: 'applied' },
       toolCalls: [{ name: 'calculate' }],
       grounding: { coverage: 1 },
+      evidence: { claims: [{ id: 'old', text: '旧结论' }] },
       faithfulnessGate: { action: 'block', refusalText: '拒答' },
       fragments: [{ type: 'unknown', data: { value: 1 } }],
     });
@@ -158,6 +160,7 @@ describe('message fragments', () => {
     expect(reset.decision).toBeNull();
     expect(reset.toolCalls).toEqual([]);
     expect(reset.grounding).toBeNull();
+    expect(reset.evidence).toBeNull();
     expect(reset.faithfulnessGate).toBeNull();
     expect(reset.fragments).toEqual([]);
   });

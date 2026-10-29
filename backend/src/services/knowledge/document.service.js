@@ -409,6 +409,7 @@ class DocumentService {
       title: docMeta.title,
       category: docMeta.category,
       contentLength: parseInt(docMeta.contentLength) || 0,
+      sourceRevision: crypto.createHash('sha256').update(String(docMeta.content || ''), 'utf8').digest('hex'),
       chunkCount: parseInt(docMeta.chunkCount) || 0,
       vectorStatus: docMeta.vectorStatus || VECTOR_STATUS.LOCAL_ONLY,
       vectorMessage: docMeta.vectorMessage || '',

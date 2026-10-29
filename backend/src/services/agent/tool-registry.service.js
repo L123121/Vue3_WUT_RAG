@@ -117,8 +117,9 @@ function withTimeout(promise, timeoutMs, signal = null, onTimeout = null) {
 }
 
 class ToolRegistry {
-  constructor() {
+  constructor({ authorize = null } = {}) {
     this.tools = new Map();
+    this.authorize = authorize;
   }
 
   /**
@@ -148,6 +149,7 @@ class ToolRegistry {
       parallelSafe: tool.parallelSafe !== false,
       sideEffect: tool.sideEffect === true,
       requiresConfirmation: tool.requiresConfirmation === true,
+      execution: tool.execution || 'trusted_read',
       registeredAt: new Date(),
     });
   }
@@ -231,10 +233,16 @@ class ToolRegistry {
     const tool = this.tools.get(name);
     if (!tool) return { ok: false, content: `未知工具: ${name}`, data: null };
     if (!tool.enabled) return { ok: false, content: `工具 ${name} 已禁用`, data: null };
+    if (tool.execution !== 'trusted_read') return { ok: false, content: '该工具必须由独立执行器或沙箱执行', data: null, errorCode: 'SANDBOX_REQUIRED' };
+    if (tool.sideEffect || tool.requiresConfirmation) return { ok: false, content: '该工具需要持久任务中的人工审批，聊天请求不能直接执行', data: null, errorCode: 'DURABLE_APPROVAL_REQUIRED' };
     if (context.signal?.aborted) throw createAbortError();
     const timeoutMs = tool.timeoutMs || DEFAULT_TOOL_TIMEOUT_MS;
     let timedOut = false;
     try {
+      if (this.authorize) {
+        const decision = await this.authorize(tool, context);
+        if (decision?.effect !== 'allow') return { ok: false, content: decision?.reason || '工具需要权限或持久任务审批', data: null, errorCode: decision?.effect === 'approval' ? 'DURABLE_APPROVAL_REQUIRED' : 'POLICY_DENIED' };
+      }
       validateToolArgs(tool.parameters, args);
       const controller = new AbortController();
       const abortHandler = () => controller.abort(context.signal?.reason);

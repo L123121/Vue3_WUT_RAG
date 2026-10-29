@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { CheckCircle2, Circle, MapPin, Clock, ListChecks, ClipboardList, AlertCircle, FileText } from 'lucide-vue-next';
+import CreateTaskAction from '../campus/CreateTaskAction.vue';
 
 /**
  * 政策问答「步骤卡片」组件
@@ -9,6 +10,9 @@ import { CheckCircle2, Circle, MapPin, Clock, ListChecks, ClipboardList, AlertCi
  */
 const props = defineProps({
   card: { type: Object, required: true },
+  messageId: { type: String, default: '' },
+  sources: { type: Array, default: () => [] },
+  disabled: Boolean,
 });
 
 // 勾选状态（本地交互，按步骤下标记录）
@@ -105,6 +109,7 @@ const materials = computed(() => (Array.isArray(props.card?.materials) ? props.c
       <p v-if="steps.length === 0 && materials.length === 0" class="text-xs text-slate-400 dark:text-gray-500">
         <ListChecks :size="12" class="inline mr-1" />未能提取到结构化流程信息，请参考上方回答。
       </p>
+      <CreateTaskAction v-if="messageId && steps.length" :card="card" :message-id="messageId" :sources="sources" :disabled="disabled" />
     </div>
   </div>
 </template>

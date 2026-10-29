@@ -56,6 +56,7 @@ vi.mock('../src/services/llm/ai.service', () => {
 let registryMod;
 let agentTools;
 let agentMod;
+let productionAuthorize;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -66,6 +67,8 @@ beforeEach(() => {
   }
   registryMod = require('../src/services/agent/tool-registry.service');
   agentTools = require('../src/services/agent/agent-tools.service');
+  productionAuthorize = agentTools.toolRegistry.authorize;
+  agentTools.toolRegistry.authorize = vi.fn(async () => ({ effect: 'allow' }));
   agentMod = require('../src/services/agent/agent.service');
   // 调度机制测试用的确定性工具，不依赖任何业务工具
   agentTools.toolRegistry.register({
@@ -87,6 +90,21 @@ beforeEach(() => {
 });
 
 describe('ToolRegistry（移植自存档版）', () => {
+  it('生产工具执行先读取真实身份并遵循权限中心拒绝结果', async () => {
+    const auth = require('../src/services/auth/auth.service');
+    const policy = require('../src/services/agent-runtime/tool-policy.service').getToolPolicyService();
+    const actor = { id: 'test_actor', role: 'user', approved: true };
+    const readUser = vi.spyOn(auth, 'getUserById').mockResolvedValue(actor);
+    const decide = vi.spyOn(policy, 'decide').mockResolvedValue({ effect: 'deny', reason: '测试策略拒绝' });
+    agentTools.toolRegistry.authorize = productionAuthorize;
+    try {
+      const result = await agentTools.executeToolDetailed('search_knowledge_base', { query: '图书馆' }, { userId: actor.id, role: 'admin' });
+      expect(readUser).toHaveBeenCalledWith(actor.id);
+      expect(decide).toHaveBeenCalledWith('search_knowledge_base', actor);
+      expect(result).toMatchObject({ ok: false, errorCode: 'POLICY_DENIED', content: '测试策略拒绝' });
+    } finally { readUser.mockRestore(); decide.mockRestore(); }
+  });
+
   it('注册/查询/移除工具', () => {
     const { ToolRegistry } = registryMod;
     const reg = new ToolRegistry();

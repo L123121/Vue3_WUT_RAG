@@ -23,10 +23,13 @@ describe('migration-runner', () => {
     const second = runMigrations({ dbPath });
     const db = new Database(dbPath, { readonly: true });
 
-    expect(first.applied).toEqual(['001_initial_schema.sql', '002_background_jobs.sql']);
+    expect(first.applied).toEqual(['001_initial_schema.sql', '002_background_jobs.sql', '003_agent_runtime.sql', '004_agent_run_generation.sql']);
     expect(second.applied).toEqual([]);
-    expect(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count).toBe(2);
-    expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'background_jobs'").get()).toBeTruthy();
+    expect(db.prepare('SELECT COUNT(*) AS count FROM schema_migrations').get().count).toBe(4);
+    expect(db.prepare('PRAGMA table_info(agent_runs)').all().map(column => column.name)).toEqual(expect.arrayContaining(['generation', 'lease_token']));
+    for (const table of ['background_jobs', 'agent_runs', 'agent_runtime_kv']) {
+      expect(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)).toBeTruthy();
+    }
     db.close();
   });
 

@@ -19,6 +19,7 @@ export const RUN_EVENT_TYPES = Object.freeze({
   PROCESS: 'process',
   TRACE: 'trace',
   GROUNDING: 'grounding',
+  EVIDENCE: 'evidence',
   FAITHFULNESS_GATE: 'faithfulness.gate',
   USAGE: 'usage',
   FOLLOWUPS: 'followups',
@@ -97,6 +98,9 @@ export const dispatchRunEvent = (event, handlers = {}) => {
     }
     case RUN_EVENT_TYPES.GROUNDING:
       handlers.onGrounding?.(data.grounding, event);
+      break;
+    case RUN_EVENT_TYPES.EVIDENCE:
+      handlers.onEvidence?.(data.evidence, event);
       break;
     case RUN_EVENT_TYPES.FAITHFULNESS_GATE:
       handlers.onFaithfulnessGate?.(data.gate, event);

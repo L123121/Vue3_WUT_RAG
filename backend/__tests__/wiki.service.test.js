@@ -160,6 +160,20 @@ describe('WikiService.listEntries', () => {
     expect(entries.map(e => e.slug)).toEqual(['操作系统要点', '图书馆使用指南']);
   });
 
+  it('生产列表不带正文时仍按同版哈希判断，已发布搜索回读实际正文', async () => {
+    const { DocumentService } = require('../src/services/knowledge/document.service');
+    const docs = new DocumentService({ store });
+    const summaries = DOCS.map(item => docs._normalizeDocMeta({ ...item, createdAt: Date.now() }));
+    expect(summaries.every(item => !Object.hasOwn(item, 'content'))).toBe(true);
+    documentService.listDocuments.mockResolvedValue({ documents: summaries });
+    const { entries } = await wiki.listEntries();
+    expect(entries).toHaveLength(2);
+    expect(entries.every(item => !item.stale)).toBe(true);
+    const results = await wiki.searchPublished('图书馆');
+    expect(results[0].body).toContain('8:00-22:00');
+    expect(results[0].currentRevision).toBe(summaries[0].sourceRevision);
+  });
+
   it('标题命中即入选，未命中的词条才回读正文', async () => {
     store.hgetall.mockClear();
     const { entries } = await wiki.listEntries({ query: '操作系统' });
@@ -325,8 +339,12 @@ describe('WikiService 编译期互链', () => {
     enqueueJob.mockClear();
     await localWiki.setVisibility({ docId: 'doc_rel1', visible: false });
     await localWiki.setVisibility({ docId: 'doc_rel1', visible: true });
-    expect(enqueueJob).toHaveBeenCalledOnce();
-    expect(enqueueJob.mock.calls[0][2].idempotencyKey).toBe(firstIdempotencyKey);
+    const relationJobs = enqueueJob.mock.calls.filter(call => call[0] === 'wiki.relations.compile');
+    const sourceJobs = enqueueJob.mock.calls.filter(call => call[0] === 'campus.source.refresh');
+    expect(relationJobs).toHaveLength(1);
+    expect(relationJobs[0][2].idempotencyKey).toBe(firstIdempotencyKey);
+    expect(sourceJobs).toHaveLength(2);
+    expect(sourceJobs.every(call => call[1].docId === 'doc_rel1')).toBe(true);
     expect(fakeAi.getCompletion).not.toHaveBeenCalled();
   });
 

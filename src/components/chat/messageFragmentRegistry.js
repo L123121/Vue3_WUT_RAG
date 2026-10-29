@@ -7,6 +7,7 @@ import MessageTextFragment from './MessageTextFragment.vue';
 import MessageStatusFragment from './MessageStatusFragment.vue';
 import DecisionDraftFragment from './DecisionDraftFragment.vue';
 import ProcessCard from './ProcessCard.vue';
+import MessageEvidenceFragment from '../campus/MessageEvidenceFragment.vue';
 import AgentToolPanel from './AgentToolPanel.vue';
 import RetrievalTracePanel from './RetrievalTracePanel.vue';
 import FallbackMessageFragment from './FallbackMessageFragment.vue';
@@ -30,7 +31,21 @@ const registry = Object.freeze({
   },
   [MESSAGE_FRAGMENT_TYPES.PROCESS_CARD]: {
     component: ProcessCard,
-    props: ({ message }) => ({ card: message.processCard }),
+    props: ({ message, isStreaming, isError }) => ({
+      card: message.processCard,
+      messageId: message.id || '',
+      sources: message.evidence?.sources?.length ? message.evidence.sources : (message.sources || []),
+      disabled: isStreaming || isError || message.faithfulnessGate?.action === 'block',
+    }),
+  },
+  [MESSAGE_FRAGMENT_TYPES.EVIDENCE]: {
+    component: MessageEvidenceFragment,
+    props: ({ message, isStreaming, isError }) => ({
+      report: message.evidence || null,
+      answer: getText(message),
+      sources: message.sources || [],
+      disabled: isStreaming || isError || message.faithfulnessGate?.action === 'block',
+    }),
   },
   [MESSAGE_FRAGMENT_TYPES.DECISION_BADGE]: {
     component: MessageStatusFragment,
